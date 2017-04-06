@@ -1,0 +1,319 @@
+<!--
+  Copyright 2017 Goldman Sachs.
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied.  See the License for the
+  specific language governing permissions and limitations
+  under the License.
+  -->
+
+<project name="jrpip" default="all" basedir="..">
+    <property environment="env"/>
+    <property name="jdk.home" value="${env.JDK_HOME}"/>
+    <property name="root" value="${basedir}"/>
+
+    <property name="junit.version" value="4.11"/>
+    <property name="slf4j.version" value="1.6.4"/>
+
+    <import file="${root}/build/jrpip-config.xml"/>
+
+    <fileset dir="${root}/build/lib" id="fileset.build.lib">
+        <include name="**/*.jar"/>
+    </fileset>
+
+    <fileset dir="${root}/lib/test" id="fileset.lib.test">
+        <include name="**/*.jar"/>
+    </fileset>
+
+    <fileset dir="${root}/lib/compile" id="fileset.lib.compile">
+        <include name="**/*.jar"/>
+    </fileset>
+
+    <path id="jrpip.compile.classpath">
+        <fileset refid="fileset.lib.compile"/>
+    </path>
+
+    <path id="jrpip.test.compile.classpath">
+        <fileset refid="fileset.lib.test"/>
+        <path refid="jrpip.compile.classpath"/>
+        <pathelement location="${root}/target/classes"/>
+    </path>
+
+    <path id="jrpip.test.run.classpath">
+        <path refid="jrpip.test.compile.classpath"/>
+        <pathelement location="${root}/target/classes"/>
+        <pathelement location="${root}/target/test-classes"/>
+        <pathelement location="${root}/src/test/resources"/>
+    </path>
+
+    <path id="xslt.processor.classpath">
+        <fileset dir="${root}/build/lib/xalan">
+            <include name="**/*.jar"/>
+        </fileset>
+    </path>
+
+    <macrodef name="libboot">
+        <attribute name="specFile" />
+        <sequential>
+            <java failonerror="true" dir="${root}" classpath="${root}/libboot/target/classes" classname="org.libboot.Libboot" fork="true">
+                <arg value="download" />
+                <arg value="@{specFile}" />
+                <arg value="build/repos.txt" />
+            </java>
+        </sequential>
+    </macrodef>
+
+    <target name="clean-jrpip" >
+        <delete quiet="true" dir="${root}/target"/>
+    </target>
+
+    <target name="clean" depends="clean-jrpip" description="Delete class files and other temp files"/>  <!-- standard alias -->
+
+    <target name="all" depends="compile-jrpip"/>
+
+    <target name="sanity-check-build">
+        <available property="jdk.sanity.check" classname="java.sql.Connection" ignoresystemclasses="true">
+            <classpath>
+                <fileset dir="${jdk.home}" includes="**/*.jar"/>
+            </classpath>
+        </available>
+        <fail message="Could not find the JDK! Check ${jdk.home}." unless="jdk.sanity.check"/>
+        <available property="jrpip.sanity.check" file="${root}/src/main/java/com/gs/jrpip/MethodResolver.java"/>
+        <fail message="Could not find jrpip sources. Project root is ${root}, but there is nothing in ${root}/src/main/java/com/gs/jrpip/MethodResolver.java." unless="jrpip.sanity.check"/>
+    </target>
+
+    <target name="determine-jdk">
+        <available property="jdk14" classname="java.sql.Savepoint" ignoresystemclasses="true">
+            <classpath>
+                <pathelement location="${jdk.home}/jre/lib/rt.jar"/>
+            </classpath>
+        </available>
+    </target>
+
+    <target name="init-jrpip" depends="determine-jdk, sanity-check-build">
+        <tstamp/>
+        <mkdir dir="${root}/target"/>
+        <mkdir dir="${root}/target"/>
+        <mkdir dir="${root}/target/depend"/>
+        <mkdir dir="${root}/target/classes"/>
+        <mkdir dir="${root}/target/test-classes"/>
+        <mkdir dir="${root}/target/javadoc"/>
+    </target>
+
+    <!-- ************************** jrpip **********************************-->
+
+    <target name="libboot-jrpip">
+        <libboot specFile="build/jrpiplib.spec"/>
+    </target>
+
+    <target name="main-dependset" unless="${unsafeCompile}">
+        <dependset>
+            <srcfileset dir="${root}/src/main/java"/>
+            <targetfileset dir="${root}/target/classes"/>
+        </dependset>
+    </target>
+
+    <target name="compile-jrpip" depends="init-jrpip, libboot-jrpip, main-dependset">
+        <javac destdir="${root}/target/classes"
+            debug="true"
+            source="1.6"
+            target="1.6"
+            nowarn="true"
+            includeAntRuntime="false">
+            <src path="${root}/src/main/java"/>
+            <compilerarg line="-Xlint:-unchecked -Xlint:-deprecation -XDignore.symbol.file"/>
+            <classpath>
+                <path refid="jrpip.compile.classpath"/>
+            </classpath>
+        </javac>
+    </target>
+
+    <!-- ************************** /jrpip **********************************-->
+    <!-- ************************** jrpip test **********************************-->
+    <target name="test-dependset" unless="${unsafeCompile}">
+        <dependset>
+            <srcfileset dir="${root}/src/test/java"/>
+            <srcfileset dir="${root}/target/classes"/>
+            <targetfileset dir="${root}/target/test-classes"/>
+        </dependset>
+    </target>
+
+    <target name="compile-jrpip-test" depends="compile-jrpip, test-dependset">
+        <javac destdir="${root}/target/test-classes"
+            debug="true"
+            source="1.6"
+            target="1.6"
+            nowarn="true"
+            includeAntRuntime="true">
+            <src path="${root}/src/test/java"/>
+            <classpath>
+                <path refid="jrpip.test.compile.classpath"/>
+            </classpath>
+        </javac>
+    </target>
+    <target name="jrpip-test-suite" depends="compile-jrpip-test" description="Run JUnit test cases">
+        <property name="jacocovmarg" value="-Dcoverage=none"/>
+        <delete quiet="true" dir="${root}/target/testresult"/>
+        <mkdir dir="${root}/target/testresult"/>
+        <tstamp>
+            <format property="TIME_NOW" pattern="hh:mm:ss a z"/>
+        </tstamp>
+        <echo message="JUnit master suite for jrpip starting at ${TIME_NOW} on ${TODAY} with ${test.threads} jvms."/>
+        <echo message="Log4j file: ${root}/src/test/resources/log4j.properties"/>
+        <junit printSummary="yes" haltonerror="true" haltonfailure="true" fork="true" dir="${root}/target/testresult">
+            <formatter type="xml" />
+            <formatter type="plain" usefile="false" />
+            <classpath>
+                <path refid="jrpip.test.run.classpath" />
+            </classpath>
+            <batchtest todir="${root}/target/testresult">
+                <fileset dir="${root}/src/test/java">
+                    <include name="**/Test*.java" />
+                    <include name="**/*Test.java" />
+                </fileset>
+            </batchtest>
+        </junit>
+    </target>
+
+    <!-- ************************** /jrpip test **********************************-->
+    <!-- ************************** jrpip docs **************************** -->
+    <target name="jrpip-javadoc">
+       <javadoc packagenames="com.gs.jrpip.*, com.gs.jrpip.server.*"
+           sourcepath="${root}/src/main/java"
+           defaultexcludes="yes"
+           access="public"
+           destdir="${root}/target/javadoc"
+           use="true"
+           windowtitle="jrpip User API"
+           version="yes"
+           Verbose="true">
+           <classpath>
+                 <path refid="jrpip.compile.classpath"/>
+                 <pathelement location="${root}/target/classes"/>
+           </classpath>
+      </javadoc>
+    </target>
+
+    <target name="generate-jrpip-docs" depends="jrpip-javadoc"/>
+
+
+    <!-- ************************** /jrpip docs **************************** -->
+
+
+    <!-- ************************** release opensource ***********************************-->
+    <macrodef name="generate-pom">
+        <attribute name="module" description="The name of module"/>
+        <sequential>
+            <copy file="${root}/build/pom-templates/pom-@{module}.xml"
+                  toFile="${root}/target/@{module}-${jrpip.version}.pom">
+            </copy>
+            <replace casesensitive="true" dir="${root}/target" includes="@{module}-${jrpip.version}.pom">
+                <replacefilter token="@jrpip.version@" value="${jrpip.version}"/>
+            </replace>
+        </sequential>
+    </macrodef>
+
+    <target name="jar-jrpip" depends="compile-jrpip">
+        <taskdef name="jar-with-version" classname="com.gs.fw.JarVersionCreator" loaderRef="jarVersionChecker">
+            <classpath>
+                <pathelement location="${root}/jrpipgen/target/classes"/>
+            </classpath>
+        </taskdef>
+
+        <jar jarfile="${root}/target/jrpip-${jrpip.version}.jar" index="true">
+            <manifest>
+                <attribute name="jrpip-Version" value="${jrpip.version}"/>
+            </manifest>
+            <fileset dir="${root}/target/classes">
+                <include name="**/*"/>
+            </fileset>
+            <zipfileset prefix="META-INF" file="${root}/NOTICE.txt"/>
+            <zipfileset prefix="META-INF" file="${root}/LICENSE.txt"/>
+        </jar>
+    </target>
+
+    <target name="jar-jrpip-src" depends="init-jrpip, compile-jrpip">
+        <jar jarfile="${root}/target/jrpip-${jrpip.version}-sources.jar" index="true">
+            <fileset dir="${root}/src/main/java">
+                <include name="**/*.java"/>
+            </fileset>
+            <fileset dir="${root}/target/generated-src">
+                <include name="**/*.java"/>
+            </fileset>
+            <zipfileset prefix="META-INF" file="${root}/NOTICE.txt"/>
+            <zipfileset prefix="META-INF" file="${root}/LICENSE.txt"/>
+        </jar>
+    </target>
+
+    <target name="jar-jrpip-javadoc" depends="jrpip-javadoc">
+        <jar jarfile="${root}/target/jrpip-${jrpip.version}-javadoc.jar" index="true">
+            <fileset dir="${root}/target/javadoc"/>
+            <zipfileset prefix="META-INF" file="${root}/NOTICE.txt"/>
+            <zipfileset prefix="META-INF" file="${root}/LICENSE.txt"/>
+        </jar>
+    </target>
+
+    <target name="gen-jrpip-pom" depends="init-jrpip">
+        <generate-pom module="jrpip"/>
+    </target>
+
+    <target name="prep-jrpip" depends="gen-jrpip-pom, jar-jrpip, jar-jrpip-src, jar-jrpip-javadoc"/>
+
+    <target name="prep-release" depends="prep-jrpip"/>
+
+    <target name="bundle-release" >
+        <delete quiet="true" file="${root}/target/bundle-${jrpip.version}.jar"/>
+        <dependset>
+            <srcfileset dir="${root}/target">
+                <include name="jrpip-${jrpip.version}.pom"/>
+                <include name="jrpip-${jrpip.version}.jar"/>
+                <include name="jrpip-${jrpip.version}-sources.jar"/>
+                <include name="jrpip-${jrpip.version}-javadoc.jar"/>
+            </srcfileset>
+            <targetfileset dir="${root}/target" includes="*.asc"/>
+        </dependset>
+        <fail message="Release files are missing.">
+            <condition>
+                <not>
+                    <resourcecount count="32">
+                        <fileset dir="${root}/target">
+                            <include name="jrpip-${jrpip.version}.pom"/>
+                            <include name="jrpip-${jrpip.version}.jar"/>
+                            <include name="jrpip-${jrpip.version}-sources.jar"/>
+                            <include name="jrpip-${jrpip.version}-javadoc.jar"/>
+
+                            <include name="jrpip-${jrpip.version}.pom.asc"/>
+                            <include name="jrpip-${jrpip.version}.jar.asc"/>
+                            <include name="jrpip-${jrpip.version}-sources.jar.asc"/>
+                            <include name="jrpip-${jrpip.version}-javadoc.jar.asc"/>
+                        </fileset>
+                    </resourcecount>
+                </not>
+            </condition>
+        </fail>
+        <jar jarfile="${root}/target/bundle-jrpip-${jrpip.version}.jar" index="false">
+            <fileset dir="${root}/target">
+                <include name="jrpip-${jrpip.version}.pom"/>
+                <include name="jrpip-${jrpip.version}.jar"/>
+                <include name="jrpip-${jrpip.version}-sources.jar"/>
+                <include name="jrpip-${jrpip.version}-javadoc.jar"/>
+
+                <include name="jrpip-${jrpip.version}.pom.asc"/>
+                <include name="jrpip-${jrpip.version}.jar.asc"/>
+                <include name="jrpip-${jrpip.version}-sources.jar.asc"/>
+                <include name="jrpip-${jrpip.version}-javadoc.jar.asc"/>
+            </fileset>
+        </jar>
+    </target>
+
+    <!-- ************************** /release opensource ***********************************-->
+
+
+</project>

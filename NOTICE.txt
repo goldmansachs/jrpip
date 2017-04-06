@@ -1,0 +1,25 @@
+Jrpip
+Copyright 2017 Goldman Sachs
+Licensed under Apache 2.0 license
+
+See the licenses directory for the full text of the licenses.
+
+This product includes portions of the following software:
+
+LZ4-Java
+Copyright Adrien Grand
+License under Apache 2.0 license
+
+This product depends on (links to) the following software:
+
+slf4j
+Copyright (c) 2004-2011 QOS.ch
+Licensed under the MIT license
+
+Java Servlet API
+Copyright 1997-2011 Oracle and/or its affiliates
+Licensed under CDDL 1.1 license
+
+Apache HttpClient
+Copyright 1999-2016 The Apache Software Foundation
+Licensed under Apache 2.0 license
