@@ -1,6 +1,6 @@
 #!/bin/bash
 
-JRPIP_VERSION=16.1.0
+JRPIP_VERSION=4.0.0
 
 echo Enter passphrase:
 read -s PASSPHRASE

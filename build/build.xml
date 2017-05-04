@@ -221,12 +221,6 @@
     </macrodef>
 
     <target name="jar-jrpip" depends="compile-jrpip">
-        <taskdef name="jar-with-version" classname="com.gs.fw.JarVersionCreator" loaderRef="jarVersionChecker">
-            <classpath>
-                <pathelement location="${root}/jrpipgen/target/classes"/>
-            </classpath>
-        </taskdef>
-
         <jar jarfile="${root}/target/jrpip-${jrpip.version}.jar" index="true">
             <manifest>
                 <attribute name="jrpip-Version" value="${jrpip.version}"/>
@@ -242,9 +236,6 @@
     <target name="jar-jrpip-src" depends="init-jrpip, compile-jrpip">
         <jar jarfile="${root}/target/jrpip-${jrpip.version}-sources.jar" index="true">
             <fileset dir="${root}/src/main/java">
-                <include name="**/*.java"/>
-            </fileset>
-            <fileset dir="${root}/target/generated-src">
                 <include name="**/*.java"/>
             </fileset>
             <zipfileset prefix="META-INF" file="${root}/NOTICE.txt"/>
@@ -282,7 +273,7 @@
         <fail message="Release files are missing.">
             <condition>
                 <not>
-                    <resourcecount count="32">
+                    <resourcecount count="8">
                         <fileset dir="${root}/target">
                             <include name="jrpip-${jrpip.version}.pom"/>
                             <include name="jrpip-${jrpip.version}.jar"/>
