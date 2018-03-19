@@ -7,7 +7,7 @@ payloads without multi-GB memory buffers.
 
 ## Features
 * Streamed serialized payloads. Constant memory usage for all payloads.
-* Execute once semantics: temporary network issues are handled tranparently without re-executing the remote code.
+* Execute once semantics: temporary network issues are handled transparently without re-executing the remote code.
 * No RemoteException. A runtime exception is thrown if the destination becomes completely unreachable during a call.
 * Implemented over HTTP in any servlet container.
 	* Can be encrypted using HTTPS.
