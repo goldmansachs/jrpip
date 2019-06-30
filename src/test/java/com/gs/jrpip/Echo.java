@@ -20,6 +20,9 @@ public interface Echo
 {
     String echo(String input);
 
+    @Compression(compress = false)
+    String uncompressedEcho(String input);
+
     Object echoObject(Object inputObject);
 
     String echoAndSleep(String input, long sleepInMillis) throws Exception;
@@ -33,4 +36,10 @@ public interface Echo
     ObjectWithSerializationError echoWithException(String input);
 
     int testUnserializableObject(Object o);
+
+    @Timeout(timeoutMillis = 200)
+    default String echoWithTimeout(String input, long sleepInMillis) throws Exception
+    {
+        return echoAndSleepNoSetting(input, sleepInMillis);
+    }
 }

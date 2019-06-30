@@ -67,8 +67,10 @@ public class AuthenticatedServiceTest extends JrpipTestCase
         this.setupServerWithHandler(new SecurityHandler(), this.createSecurityConstraint(), new TestRealm());
 
         FastServletProxyFactory fspf = new FastServletProxyFactory(TEST_USER, TEST_PASSWORD);
+        fspf.setUseLocalService(false);
         Echo echo = fspf.create(Echo.class, this.getJrpipUrl());
-        Assert.assertSame(EchoImpl.class, echo.getClass());
+
+        Assert.assertEquals("hello", echo.echo("hello"));
     }
 
     protected static class TestRealm implements UserRealm

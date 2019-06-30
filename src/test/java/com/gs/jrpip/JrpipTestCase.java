@@ -16,27 +16,17 @@
 
 package com.gs.jrpip;
 
-import java.net.MalformedURLException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-
 import com.gs.jrpip.client.FastServletProxyFactory;
 import com.gs.jrpip.client.ThankYouWriter;
 import com.gs.jrpip.server.JrpipServlet;
 import org.jmock.MockObjectTestCase;
 import org.junit.Assert;
-import org.mortbay.http.HttpContext;
-import org.mortbay.http.HttpHandler;
-import org.mortbay.http.HttpServer;
-import org.mortbay.http.SecurityConstraint;
-import org.mortbay.http.SocketListener;
-import org.mortbay.http.UserRealm;
+import org.mortbay.http.*;
 import org.mortbay.jetty.servlet.ServletHandler;
 import org.mortbay.jetty.servlet.ServletHolder;
+
+import java.net.MalformedURLException;
+import java.util.*;
 
 public abstract class JrpipTestCase
         extends MockObjectTestCase

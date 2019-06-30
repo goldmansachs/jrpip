@@ -16,11 +16,7 @@
 
 package com.gs.jrpip.server;
 
-import java.io.ByteArrayOutputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.ObjectInputStream;
+import java.io.*;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -337,11 +333,11 @@ public class JrpipServlet implements Servlet
         else
         {
             int len = Integer.parseInt(lenString);
-            zipped = new FixedInflaterInputStream(new ClampedInputStream(is, len - 1));
+            zipped = new FixedInflaterInputStream(new com.gs.jrpip.util.stream.ClampedInputStream(is, len - 1));
         }
         try
         {
-            ObjectInputStream in;
+            ObjectInput in;
             switch (requestType)
             {
                 case StreamBasedInvocator.INVOKE_REQUEST:
@@ -407,7 +403,7 @@ public class JrpipServlet implements Servlet
         response.getWriter().write(clientCount);
     }
 
-    private void serviceThankYou(ObjectInputStream in) throws IOException, ClassNotFoundException
+    private void serviceThankYou(ObjectInput in) throws IOException, ClassNotFoundException
     {
         this.thankYous++;
         //if (CAUSE_RANDOM_ERROR) if (Math.random() > ERROR_RATE) throw new IOException("Random error, for testing only!");
@@ -421,7 +417,7 @@ public class JrpipServlet implements Servlet
 
     private void serviceResendRequest(
             ServletResponse response,
-            ObjectInputStream in) throws IOException, ClassNotFoundException
+            ObjectInput in) throws IOException, ClassNotFoundException
     {
         this.resendRequests++;
         //if (CAUSE_RANDOM_ERROR) if (Math.random() > ERROR_RATE) throw new IOException("Random error, for testing only!");
@@ -441,7 +437,7 @@ public class JrpipServlet implements Servlet
     private void serviceInvokeRequest(
             ServletRequest request,
             ServletResponse response,
-            ObjectInputStream in,
+            ObjectInput in,
             CopyOnReadInputStream copyOnReadInputStream) throws Exception
     {
         this.methodInvocations++;
@@ -474,15 +470,7 @@ public class JrpipServlet implements Servlet
                 }
                 if (serviceRequest)
                 {
-                    JrpipRequestContext requestContext = null;
-                    if (request instanceof HttpServletRequest && this.methodInterceptor != null)
-                    {
-                        requestContext = new JrpipRequestContext(
-                                requestId,
-                                ((HttpServletRequest) request).getRemoteUser(),
-                                request.getRemoteAddr(),
-                                ((HttpServletRequest) request).getCookies());
-                    }
+                    JrpipRequestContext requestContext = getJrpipRequestContext(request, requestId);
 
                     new StreamBasedInvocator().invoke(in,
                             invokeContext,
@@ -502,6 +490,20 @@ public class JrpipServlet implements Servlet
             }
         }
         invokeContext.writeAndLogResponse(response.getOutputStream(), requestId);
+    }
+
+    private JrpipRequestContext getJrpipRequestContext(ServletRequest request, RequestId requestId)
+    {
+        JrpipRequestContext requestContext = null;
+        if (request instanceof HttpServletRequest && this.methodInterceptor != null)
+        {
+            requestContext = new JrpipRequestContext(
+                    requestId,
+                    ((HttpServletRequest) request).getRemoteUser(),
+                    request.getRemoteAddr(),
+                    ((HttpServletRequest) request).getCookies());
+        }
+        return requestContext;
     }
 
     private boolean checkVmBoundCall(
@@ -530,10 +532,9 @@ public class JrpipServlet implements Servlet
         res.setContentType("text/html");
         res.getWriter().print("<html><body>");
         res.getWriter().print("<h1>JRPIP Servlet</h1><br>Configured for <br>");
-        Iterator it = this.serviceMap.keySet().iterator();
-        while (it.hasNext())
+        for (Object o : this.serviceMap.keySet())
         {
-            res.getWriter().print(it.next() + "<br>");
+            res.getWriter().print(o + "<br>");
         }
         res.getWriter().print("<br>Total Method Invocations: " + this.methodInvocations + "<br>");
         res.getWriter().print("<br>Total Resend Requests: " + this.resendRequests + "<br>");
@@ -542,46 +543,6 @@ public class JrpipServlet implements Servlet
         long seconds = (System.currentTimeMillis() - this.startTime) / 1000L;
         res.getWriter().print("<br>Uptime: " + seconds + " sec (about " + seconds / 3600L + " hours " + seconds / 60L % 60L + " minutes)<br>");
         res.getWriter().print("</body></html>");
-    }
-
-    protected static class ServiceDefinition
-    {
-        private final Object service;
-        private final MethodResolver methodResolver;
-        private final boolean isVmBound;
-        private final OutputStreamBuilder outputStreamBuilder;
-
-        protected ServiceDefinition(
-                Object service,
-                MethodResolver methodResolver,
-                OutputStreamBuilder outputStreamBuilder,
-                boolean isVmBound)
-        {
-            this.service = service;
-            this.methodResolver = methodResolver;
-            this.outputStreamBuilder = outputStreamBuilder;
-            this.isVmBound = isVmBound;
-        }
-
-        public OutputStreamBuilder getOutputStreamBuilder()
-        {
-            return this.outputStreamBuilder;
-        }
-
-        public Object getService()
-        {
-            return this.service;
-        }
-
-        public MethodResolver getMethodResolver()
-        {
-            return this.methodResolver;
-        }
-
-        public boolean isVmBound()
-        {
-            return this.isVmBound;
-        }
     }
 
     /**

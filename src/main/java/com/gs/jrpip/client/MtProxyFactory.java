@@ -16,72 +16,33 @@
 
 package com.gs.jrpip.client;
 
+import com.gs.jrpip.JrpipServiceRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
+import java.lang.reflect.Proxy;
 import java.net.MalformedURLException;
 
-public class FastServletProxyFactory implements ServletProxyFactory
+public class MtProxyFactory implements ServletProxyFactory
 {
-    public static final String MAX_CONNECTIONS_PER_HOST = HttpMessageTransport.MAX_CONNECTIONS_PER_HOST;
-    public static final String MAX_TOTAL_CONNECTION = HttpMessageTransport.MAX_TOTAL_CONNECTION;
+    private static final Logger LOGGER = LoggerFactory.getLogger(MtProxyFactory.class);
 
-    private HttpMessageTransport transport;
-    private MtProxyFactory proxyFactory;
+    private boolean useLocalService = true;
+
+    private MessageTransport transport;
+
     /**
      * Creates the new proxy factory.
      */
-    public FastServletProxyFactory()
-    {
-        this.transport = new HttpMessageTransport();
-        this.proxyFactory = new MtProxyFactory(this.transport);
-    }
-
-    public FastServletProxyFactory(String user, String password)
-    {
-        this.transport = new HttpMessageTransport(user, password);
-        this.proxyFactory = new MtProxyFactory(this.transport);
-    }
-
-    // Initialise FastServletProxyFactory with array of tokens, path and domain
-    public FastServletProxyFactory(String[] tokenArr, String path, String domain)
-    {
-        this.transport = new HttpMessageTransport(tokenArr, path, domain);
-        this.proxyFactory = new MtProxyFactory(this.transport);
-    }
-
-    protected void setTransport(HttpMessageTransport transport)
+    public MtProxyFactory(MessageTransport transport)
     {
         this.transport = transport;
-        this.proxyFactory = new MtProxyFactory(this.transport);
-    }
-
-    public static void setMaxConnectionsPerHost(int maxConnections)
-    {
-        HttpMessageTransport.setMaxConnectionsPerHost(maxConnections);
-    }
-
-    public static void setMaxTotalConnections(int maxTotalConnections)
-    {
-        HttpMessageTransport.setMaxTotalConnections(maxTotalConnections);
-    }
-
-    public static int getMaxTotalConnection()
-    {
-        return HttpMessageTransport.getMaxTotalConnection();
-    }
-
-    public static int getMaxConnectionsPerHost()
-    {
-        return HttpMessageTransport.getMaxConnectionsPerHost();
     }
 
     public void setUseLocalService(boolean useLocalService)
     {
-        this.proxyFactory.setUseLocalService(useLocalService);
-    }
-
-    public static void clearServerChunkSupportAndIds()
-    {
-        HttpMessageTransport.clearServerChunkSupportAndIds();
+        this.useLocalService = useLocalService;
     }
 
     /**
@@ -100,7 +61,7 @@ public class FastServletProxyFactory implements ServletProxyFactory
     @Override
     public <T> T create(Class<T> api, String url) throws MalformedURLException
     {
-        return this.proxyFactory.create(api, url);
+        return this.create(api, url, 0);
     }
 
     /**
@@ -120,7 +81,7 @@ public class FastServletProxyFactory implements ServletProxyFactory
     @Override
     public <T> T create(Class<T> api, String url, int timeoutMillis) throws MalformedURLException
     {
-        return this.proxyFactory.create(api, url, timeoutMillis);
+        return this.create(api, url, timeoutMillis, false);
     }
 
     /**
@@ -139,36 +100,41 @@ public class FastServletProxyFactory implements ServletProxyFactory
      */
     public <T> T create(Class<T> api, String url, int timeoutMillis, boolean disconnectedMode) throws MalformedURLException
     {
-        return this.proxyFactory.create(api, url, timeoutMillis, disconnectedMode);
-    }
-
-    /**
-     * @return the http response code returned from the server. Response code 200 means success.
-     */
-    public static int fastFailPing(AuthenticatedUrl url) throws IOException
-    {
-        return HttpMessageTransport.fastFailPing(url, MessageTransport.PING_TIMEOUT);
+        T result = null;
+        if (this.useLocalService)
+        {
+            result = JrpipServiceRegistry.getInstance().getLocalService(url, api);
+        }
+        if (result == null)
+        {
+            this.transport.initAndRegisterLocalServices(url, disconnectedMode, timeoutMillis);
+            if (this.useLocalService)
+            {
+                result = JrpipServiceRegistry.getInstance().getLocalService(url, api);
+            }
+            if (result == null)
+            {
+                result = (T) Proxy.newProxyInstance(api.getClassLoader(),
+                        new Class[]{api},
+                        this.transport.createInvocationHandler(api, url, timeoutMillis, disconnectedMode));
+            }
+        }
+        return result;
     }
 
     @Override
     public boolean isServiceAvailable(String url)
     {
-        return this.proxyFactory.isServiceAvailable(url);
-    }
-
-    public static long getProxyId(AuthenticatedUrl url)
-    {
-        return HttpMessageTransport.getProxyId(url);
-    }
-
-    public static boolean serverSupportsChunking(AuthenticatedUrl url)
-    {
-        return HttpMessageTransport.serverSupportsChunking(url);
-    }
-
-    protected void setInvocationHandlerFunction(HttpInvocationHandlerFunction invocationHandlerFunction)
-    {
-        this.transport.setHttpInvocationHandlerFunction(invocationHandlerFunction);
+        boolean result = false;
+        try
+        {
+            result = this.transport.fastFailPing(url, MessageTransport.PING_TIMEOUT);
+        }
+        catch (IOException e)
+        {
+            LOGGER.debug("ping failed with ", e);
+        }
+        return result;
     }
 }
 

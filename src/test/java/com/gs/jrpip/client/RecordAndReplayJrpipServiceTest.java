@@ -14,23 +14,19 @@
   under the License.
  */
 
-package com.gs.jrpip;
+package com.gs.jrpip.client;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.net.MalformedURLException;
 
-import com.gs.jrpip.client.AuthenticatedUrl;
-import com.gs.jrpip.client.FastServletProxyFactory;
-import com.gs.jrpip.client.InvocationHandlerFunction;
-import com.gs.jrpip.client.JrpipRuntimeException;
-import com.gs.jrpip.client.record.MethodCallStreamResolver;
-import com.gs.jrpip.client.record.RecordedProxyInvocationHandler;
-import com.gs.jrpip.client.record.RecordingProxyInvocationHandler;
+import com.gs.jrpip.Echo;
+import com.gs.jrpip.FakeException;
+import com.gs.jrpip.JrpipTestCase;
+import com.gs.jrpip.client.record.*;
 import org.junit.Assert;
 
 public class RecordAndReplayJrpipServiceTest
@@ -59,23 +55,6 @@ public class RecordAndReplayJrpipServiceTest
             }
 
             return RecordAndReplayJrpipServiceTest.this.byteArrayOutputStream;
-        }
-    };
-
-    private final InvocationHandlerFunction recordedInvocationHandlerFunction = new InvocationHandlerFunction()
-    {
-        public InvocationHandler getInvocationHandler(AuthenticatedUrl url, Class api, int timeout)
-        {
-            return new RecordedProxyInvocationHandler(RecordAndReplayJrpipServiceTest.this.streamResolver);
-        }
-    };
-
-    private final InvocationHandlerFunction recordingInvocationHandlerFunction = new InvocationHandlerFunction()
-    {
-        public InvocationHandler getInvocationHandler(
-                AuthenticatedUrl url, Class api, int timeout)
-        {
-            return new RecordingProxyInvocationHandler(url, api, timeout, RecordAndReplayJrpipServiceTest.this.streamResolver);
         }
     };
 
@@ -177,16 +156,16 @@ public class RecordAndReplayJrpipServiceTest
     private Echo getRecordingEcho() throws MalformedURLException
     {
         FastServletProxyFactory fspf = new FastServletProxyFactory();
+        fspf.setTransport(new RecordingHttpMessageTransport(this.streamResolver));
         fspf.setUseLocalService(false);
-        fspf.setInvocationHandlerFunction(this.recordingInvocationHandlerFunction);
         return fspf.create(Echo.class, this.getJrpipUrl());
     }
 
     private Echo getRecordedEcho() throws MalformedURLException
     {
         FastServletProxyFactory fspf = new FastServletProxyFactory();
+        fspf.setTransport(new RecordedHttpMessageTransport(this.streamResolver));
         fspf.setUseLocalService(false);
-        fspf.setInvocationHandlerFunction(this.recordedInvocationHandlerFunction);
         return fspf.create(Echo.class, this.getJrpipUrl(), 0, true);
     }
 }

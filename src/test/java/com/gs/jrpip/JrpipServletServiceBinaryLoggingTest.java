@@ -35,7 +35,7 @@ import com.gs.jrpip.util.stream.readback.RequestData;
 import com.gs.jrpip.util.stream.readback.RequestDataMultiStreamIterable;
 import org.junit.Assert;
 
-public class SimpleJrpipServiceBinaryLoggingTest
+public class JrpipServletServiceBinaryLoggingTest
         extends JrpipTestCase
 {
     public static final int N_THREADS = 50;

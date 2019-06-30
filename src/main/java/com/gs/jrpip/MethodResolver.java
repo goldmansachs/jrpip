@@ -24,9 +24,10 @@ import com.gs.jrpip.client.JrpipRuntimeException;
 
 public class MethodResolver
 {
-    private final Map<Method, String> methodToNameMap = new HashMap<Method, String>();
-    private final Map<String, Method> nameToMethodMap = new HashMap<String, Method>();
-    private final Map<Method, Integer> methodToTimeoutMap = new HashMap<Method, Integer>();
+    private final Map<Method, String> methodToNameMap = new HashMap<>();
+    private final Map<String, Method> nameToMethodMap = new HashMap<>();
+    private final Map<Method, Integer> methodToTimeoutMap = new HashMap<>();
+    private final Map<Method, Boolean> methodToCompressionMap = new HashMap<>();
 
     private final Class serviceClass;
 
@@ -35,18 +36,61 @@ public class MethodResolver
         this.serviceClass = serviceClass;
         Method[] methodList = serviceClass.getMethods();
 
+        Integer classTimeout = null;
+        if (this.serviceClass.isAnnotationPresent(Timeout.class))
+        {
+            classTimeout = (int) ((Timeout)this.serviceClass.getAnnotation(Timeout.class)).timeoutMillis();
+        }
+        Boolean classCompression = null;
+        if (this.serviceClass.isAnnotationPresent(Compression.class))
+        {
+            classCompression = ((Compression)this.serviceClass.getAnnotation(Compression.class)).compress();
+        }
         for (Method method : methodList)
         {
             String mangledName = this.mangleName(method);
             this.methodToNameMap.put(method, mangledName);
             this.nameToMethodMap.put(mangledName, method);
 
-            Integer timeout = this.buildTimeoutFromProperty(method);
-            if (timeout != null)
+            configureTimeout(classTimeout, method);
+            configureCompression(classCompression, method);
+        }
+    }
+
+    private void configureTimeout(Integer classTimeout, Method method)
+    {
+        Integer timeout = this.buildTimeoutFromProperty(method);
+        if (timeout != null)
+        {
+            this.methodToTimeoutMap.put(method, timeout);
+        }
+        else
+        {
+            if (method.isAnnotationPresent(Timeout.class))
             {
-                this.methodToTimeoutMap.put(method, timeout);
+                Timeout annotation = method.getAnnotation(Timeout.class);
+                this.methodToTimeoutMap.put(method, (int) annotation.timeoutMillis());
+            }
+            else if (classTimeout != null)
+            {
+                this.methodToTimeoutMap.put(method, classTimeout);
             }
         }
+    }
+
+    private void configureCompression(Boolean classCompression, Method method)
+    {
+        boolean compress = true;
+        if (method.isAnnotationPresent(Compression.class))
+        {
+            Compression annotation = method.getAnnotation(Compression.class);
+            compress = annotation.compress();
+        }
+        else if (classCompression != null)
+        {
+            compress = classCompression;
+        }
+        this.methodToCompressionMap.put(method, compress);
     }
 
     public String getMangledMethodName(Method method)
@@ -64,6 +108,11 @@ public class MethodResolver
         return this.methodToTimeoutMap.get(method);
     }
 
+    public boolean getMethodCompression(Method method)
+    {
+        return this.methodToCompressionMap.get(method);
+    }
+
     protected String mangleName(Method method)
     {
         StringBuilder sb = new StringBuilder();
@@ -71,10 +120,10 @@ public class MethodResolver
         sb.append(method.getName());
 
         Class[] params = method.getParameterTypes();
-        for (int i = 0; i < params.length; i++)
+        for (Class pc: params)
         {
             sb.append('_');
-            this.mangleClass(sb, params[i]);
+            this.mangleClass(sb, pc);
         }
 
         return sb.toString();
