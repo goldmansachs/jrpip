@@ -59,8 +59,13 @@ public class ObjectWithSerializationError implements Serializable
         int readSoFar = 0;
         while (readSoFar < len)
         {
-            readSoFar += in.read(buffer, readSoFar, len - readSoFar);
+            int read = in.read(buffer, readSoFar, len - readSoFar);
+            if (read == -1)
+            {
+                break;
+            }
+            readSoFar += read;
         }
-        this.contents = new String(buffer, JrpipServiceRegistry.ENCODE_STRING);
+        this.contents = new String(buffer,0, readSoFar, JrpipServiceRegistry.ENCODE_STRING);
     }
 }

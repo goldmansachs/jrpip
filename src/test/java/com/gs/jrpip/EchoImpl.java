@@ -42,6 +42,12 @@ public class EchoImpl implements Echo
     }
 
     @Override
+    public String uncompressedEcho(String input)
+    {
+        return input;
+    }
+
+    @Override
     public Object echoObject(Object inputObject)
     {
         return inputObject;

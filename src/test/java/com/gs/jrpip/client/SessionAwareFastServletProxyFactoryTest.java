@@ -32,8 +32,8 @@ public class SessionAwareFastServletProxyFactoryTest extends JrpipTestCase
         SessionAwareFastServletProxyFactory factory = new SessionAwareFastServletProxyFactory();
         factory.setUseLocalService(false);
         Echo echo = factory.create(Echo.class, this.getJrpipUrl());
-        FastServletProxyInvocationHandler invocationHandler = (FastServletProxyInvocationHandler) Proxy.getInvocationHandler(echo);
-        Cookie[] cookies = invocationHandler.getCookies();
+        MtProxyInvocationHandler invocationHandler = (MtProxyInvocationHandler) Proxy.getInvocationHandler(echo);
+        Cookie[] cookies = ((HttpMessageTransportData)invocationHandler.getMessageTransportData()).getCookies();
         Assert.assertEquals(1, cookies.length);
         TestCase.assertEquals("JSESSIONID", cookies[0].getName());
     }

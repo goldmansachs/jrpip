@@ -16,22 +16,11 @@
 
 package com.gs.jrpip.client;
 
-import java.io.IOException;
-import java.io.ObjectOutputStream;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
 import com.gs.jrpip.RequestId;
-import com.gs.jrpip.server.StreamBasedInvocator;
-import org.apache.commons.httpclient.Cookie;
-import org.apache.commons.httpclient.HttpClient;
-import org.apache.commons.httpclient.HttpMethod;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.*;
 
 public final class ThankYouWriter implements Runnable
 {
@@ -40,7 +29,7 @@ public final class ThankYouWriter implements Runnable
     private static final int SLEEP_TIME = 500; // so multiple requests get coalesced
     private boolean done = true;
 
-    private final Map<CoalesceThankYouNotesKey, List> requestMap = new HashMap<CoalesceThankYouNotesKey, List>();
+    private final Map<Object, List<ThankYouRequest>> requestMap = new HashMap<>();
 
     // singelton
     private ThankYouWriter()
@@ -85,27 +74,27 @@ public final class ThankYouWriter implements Runnable
         return this.requestMap.size();
     }
 
-    public synchronized void addRequest(AuthenticatedUrl url, Cookie[] cookies, RequestId requestId)
+    public synchronized void addRequest(MessageTransport transport, MessageTransportData data, RequestId requestId)
     {
         this.startThankYouThread();
         if (LOGGER.isDebugEnabled())
         {
-            LOGGER.debug("added request for {}", url);
+            LOGGER.debug("added request for {}", data.toString());
         }
         requestId.setFinishedTime(System.currentTimeMillis());
 
-        CoalesceThankYouNotesKey key = new CoalesceThankYouNotesKey(url, cookies);
-        List list = this.requestMap.get(key);
+        Object key = data.createThankYouKey();
+        List<ThankYouRequest> list = this.requestMap.get(key);
         if (list == null)
         {
-            list = new ArrayList(6);
+            list = new ArrayList<>(6);
             this.requestMap.put(key, list);
         }
-        list.add(requestId);
+        list.add(new ThankYouRequest(transport, data, requestId));
         this.notifyAll();
     }
 
-    public synchronized List removeRequestList(CoalesceThankYouNotesKey url)
+    private synchronized List<ThankYouRequest> removeRequestList(Object url)
     {
         return this.requestMap.remove(url);
     }
@@ -113,7 +102,7 @@ public final class ThankYouWriter implements Runnable
     @Override
     public void run()
     {
-        ArrayList<CoalesceThankYouNotesKey> urlsToSend = new ArrayList<CoalesceThankYouNotesKey>(6);
+        ArrayList<Object> urlsToSend = new ArrayList<>(6);
         while (!this.done)
         {
             try
@@ -129,7 +118,7 @@ public final class ThankYouWriter implements Runnable
                 this.getUrlsToSend(urlsToSend);
                 for (int i = 0; i < urlsToSend.size(); i++)
                 {
-                    CoalesceThankYouNotesKey key = urlsToSend.get(i);
+                    Object key = urlsToSend.get(i);
                     if (!this.done)
                     {
                         this.sendThankYouRequest(key);
@@ -149,53 +138,34 @@ public final class ThankYouWriter implements Runnable
         }
     }
 
-    void sendThankYouRequest(CoalesceThankYouNotesKey key)
+    void sendThankYouRequest(Object key)
     {
         boolean success = false;
-        List requestList = this.removeRequestList(key);
-        if (done || requestList == null)
+        List<ThankYouRequest> requestList = this.removeRequestList(key);
+        if (done || requestList == null || requestList.isEmpty())
         {
             return;
         }
-        HttpMethod streamedPostMethod = null;
         try
         {
             if (LOGGER.isDebugEnabled())
             {
                 LOGGER.debug("Sending thank you for {}", requestList.size());
             }
-            AuthenticatedUrl url = key.getAuthenticatedUrl();
-            HttpClient httpClient = FastServletProxyFactory.getHttpClient(url);
-            httpClient.getState().addCookies(key.getCookies());
-            OutputStreamWriter writer = new ThankYouStreamWriter(requestList);
-            streamedPostMethod = FastServletProxyFactory.serverSupportsChunking(url) ? new StreamedPostMethod(url.getPath() + "?thanks", writer) : new BufferedPostMethod(url.getPath() + "?thanks", writer);
-            httpClient.executeMethod(streamedPostMethod);
-
-            int code = streamedPostMethod.getStatusCode();
-
-            streamedPostMethod.getResponseBodyAsStream().close();
-            streamedPostMethod.releaseConnection();
-            streamedPostMethod = null;
-            success = code == 200;
+            ThankYouRequest thankYouRequest = requestList.get(0);
+            success = thankYouRequest.transport.sendThanks(key, requestList);
         }
         catch (Exception e)
         {
             LOGGER.warn("Exception in JRPIP thank you note for URL: {} Retrying.", key.toString(), e);
         }
-        finally
-        {
-            if (streamedPostMethod != null)
-            {
-                streamedPostMethod.releaseConnection();
-            }
-        }
         if (!success)
         {
-            this.readList(key, requestList);
+            this.readdList(key, requestList);
         }
     }
 
-    void readList(CoalesceThankYouNotesKey urlPair, List requestList)
+    void readdList(Object urlPair, List<ThankYouRequest> requestList)
     {
         // technically requestList cannot be null, but in rear conditions, where JVM runs
         // out of memory, it can be null. Here is an example:
@@ -203,7 +173,7 @@ public final class ThankYouWriter implements Runnable
         {
             for (int i = 0; i < requestList.size(); )
             {
-                RequestId requestId = (RequestId) requestList.get(i);
+                RequestId requestId = requestList.get(i).requestId;
                 if (requestId.isExpired())
                 {
                     requestList.remove(i);
@@ -219,7 +189,7 @@ public final class ThankYouWriter implements Runnable
             }
             synchronized (this)
             {
-                List list = this.requestMap.get(urlPair);
+                List<ThankYouRequest> list = this.requestMap.get(urlPair);
                 if (list == null)
                 {
                     this.requestMap.put(urlPair, requestList);
@@ -233,126 +203,28 @@ public final class ThankYouWriter implements Runnable
         }
     }
 
-    synchronized void getUrlsToSend(List<CoalesceThankYouNotesKey> listToSend)
+    synchronized void getUrlsToSend(List<Object> listToSend)
     {
         listToSend.addAll(this.requestMap.keySet());
     }
 
-    protected static class ThankYouStreamWriter extends JrpipRequestWriter
+    public static class ThankYouRequest
     {
-        private final List requestList;
+        private final MessageTransport transport;
+        private final MessageTransportData data;
+        private final RequestId requestId;
 
-        protected ThankYouStreamWriter(List requestList)
+        public ThankYouRequest(MessageTransport transport, MessageTransportData data, RequestId requestId)
         {
-            this.requestList = requestList;
+            this.transport = transport;
+            this.data = data;
+            this.requestId = requestId;
         }
 
-        @Override
-        public byte getRequestType()
+        public RequestId getRequestId()
         {
-            return StreamBasedInvocator.THANK_YOU_REQUEST;
-        }
-
-        @Override
-        public void writeParameters(ObjectOutputStream objectOutputStream) throws IOException
-        {
-            objectOutputStream.writeInt(this.requestList.size());
-            for (Object aRequestList : this.requestList)
-            {
-                //if (CAUSE_RANDOM_ERROR) if (Math.random() > ERROR_RATE) throw new IOException("Random error, for testing only!");
-                objectOutputStream.writeObject(aRequestList);
-            }
+            return requestId;
         }
     }
 
-    private static final class CoalesceThankYouNotesKey
-    {
-        private static final Cookie[] NO_COOKIES = new Cookie[0];
-        private static final Comparator<? super Cookie> COOKIE_NAME_COMPARATOR = new Comparator<Cookie>()
-        {
-            @Override
-            public int compare(Cookie o1, Cookie o2)
-            {
-                return o1.getName().compareTo(o2.getName());
-            }
-        };
-        private final AuthenticatedUrl authenticatedUrl;
-        private final Cookie[] cookies;
-
-        private CoalesceThankYouNotesKey(AuthenticatedUrl authenticatedUrl, Cookie[] cookies)
-        {
-            this.authenticatedUrl = authenticatedUrl;
-            this.cookies = cookies == null ? NO_COOKIES : this.sort(cookies);
-        }
-
-        private Cookie[] sort(Cookie[] cookies)
-        {
-            Cookie[] result = new Cookie[cookies.length];
-            System.arraycopy(cookies, 0, result, 0, cookies.length);
-            Arrays.sort(result, COOKIE_NAME_COMPARATOR);
-            return result;
-        }
-
-        @Override
-        public boolean equals(Object o)
-        {
-            if (this == o)
-            {
-                return true;
-            }
-            if (o == null || this.getClass() != o.getClass())
-            {
-                return false;
-            }
-
-            CoalesceThankYouNotesKey that = (CoalesceThankYouNotesKey) o;
-
-            if (!this.authenticatedUrl.equals(that.authenticatedUrl))
-            {
-                return false;
-            }
-            return Arrays.equals(this.cookies, that.cookies);
-        }
-
-        @Override
-        public int hashCode()
-        {
-            int result = this.authenticatedUrl.hashCode();
-            for(Cookie c: cookies)
-            {
-                result = 31 * result + c.hashCode();
-            }
-            return result;
-        }
-
-        public Cookie[] getCookies()
-        {
-            return this.cookies;
-        }
-
-        public AuthenticatedUrl getAuthenticatedUrl()
-        {
-            return this.authenticatedUrl;
-        }
-
-        @Override
-        public String toString()
-        {
-            return '{'
-                    + "authenticatedUrl: " + this.authenticatedUrl
-                    + ", cookies: " + this.cookiesAsString()
-                    + '}';
-        }
-
-        private String cookiesAsString()
-        {
-            String result = "[";
-            for(Cookie c: this.cookies)
-            {
-                result = c.getName()+":"+c.getValue();
-            }
-            result += "]";
-            return result;
-        }
-    }
 }

@@ -16,10 +16,7 @@
 
 package com.gs.jrpip.server;
 
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.io.ObjectOutputStream;
-import java.io.OutputStream;
+import java.io.*;
 import java.util.ArrayList;
 
 import com.gs.jrpip.FixedDeflaterOutputStream;
@@ -46,7 +43,8 @@ public class Context
     private boolean exceptionThrown;
     private long lastSignOfLifeTime;
     private int state;
-    private ArrayList invocators = new ArrayList(2);
+    private boolean compressed = true;
+    private ArrayList<StreamBasedInvocator> invocators = new ArrayList<>(2);
     private OutputStreamBuilder outputStreamBuilder = VirtualOutputStream.NULL_OUTPUT_STREAM_BUILDER;
 
     public Object getReturnValue()
@@ -69,6 +67,11 @@ public class Context
         this.invocators.add(invocator);
         this.state = READING_PARAMETERS_STATE;
         this.lastSignOfLifeTime = System.currentTimeMillis();
+    }
+
+    public void setCompressed(boolean compressed)
+    {
+        this.compressed = compressed;
     }
 
     public synchronized void waitForInvocationToFinish()
@@ -106,7 +109,7 @@ public class Context
     {
         for (int i = 0; i < this.invocators.size(); i++)
         {
-            StreamBasedInvocator tmpIvocator = (StreamBasedInvocator) this.invocators.get(i);
+            StreamBasedInvocator tmpIvocator = this.invocators.get(i);
             if (!tmpIvocator.equals(invocator))
             {
                 tmpIvocator.setAbortInvocation();
@@ -201,17 +204,25 @@ public class Context
         {
             outputStream.write(StreamBasedInvocator.OK_STATUS);
         }
-        FixedDeflaterOutputStream zipped = new FixedDeflaterOutputStream(outputStream);
+        FixedDeflaterOutputStream zipped = null;
+        if (this.compressed)
+        {
+            zipped = new FixedDeflaterOutputStream(outputStream);
+            outputStream = zipped;
+        }
         try
         {
-            ObjectOutputStream out = new ObjectOutputStream(zipped);
+            ObjectOutputStream out = new ObjectOutputStream(outputStream);
             //if (CAUSE_RANDOM_ERROR) if (Math.random() > ERROR_RATE) throw new IOException("Random error, for testing only!");
             out.writeObject(this.returnValue);
             out.flush();
         }
         finally
         {
-            zipped.finish();
+            if (zipped != null)
+            {
+                zipped.finish();
+            }
         }
     }
 }

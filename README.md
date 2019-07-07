@@ -13,13 +13,44 @@ payloads without multi-GB memory buffers.
 	* Can be encrypted using HTTPS.
 	* Can use HTTP authentication (cookie or header).
 	* Proxy/loadbalancing supportable.
+* Has a built in socket transport in addition to HTTP
 * JrPip is safer than RMI because it never creates classes from the binary payload.
 * JrPip does not in any way interfere with garbage collection.
 * Binary logging.
 * Ability to route to a local implementation (when configured).
 * Server side method interceptor.
 
-## Usage
+### Timeout specification
+The default timeout is zero (infinite), which is appropriate for heavy workloads
+within closely related endpoints (e.g. same application).
+
+The timeout can be specified in 4 ways, with the following precedence:
+- Highest precedence: `System.properties`. A timeout can be specified with the full class
+name and method signature. Example:
+```java
+    System.setProperty("jrpip.timeout.com.gs.jrpip.Echo.echoAndSleep_java.lang.String_long", "1000");
+```
+- `@Timeout` annotation on the method in the interface. Example:
+```java
+    @Timeout(timeoutMillis = 10000)
+    public int someMethod(String val);
+```
+- `@Timeout` annotation on the interface class. Example:
+```java
+@Timeout(timeoutMillis = 5000)
+public interface ExampleService
+```
+- Timeout value used in the call to `factory.create`
+
+### Binary Logging:
+The following System properties can be used to configure binary logging.
+
+* `jrpip.enableBinaryLogs`: boolean. Default: `false`. Enables binary logging.
+* `jrpip.binaryLogsDirectory`: string. Default: `jrpipBinaryLogs`. Directory where binary logs are stored.
+
+The produced log file can be inspected with the utility ListJrpipRequest. Run that command to see the options.
+
+## Usage with a servlet container
 1. Create an interface for the service.
 2. Create an implementation of that interface. All objects in the implementation method signatures must be serializable and present
 on the classpaths of both the client and server.
@@ -55,12 +86,34 @@ One or more interface/implementation pairs can be configured for a given servlet
 
 #### Typical Jetty configuration:
 ```java
+        Server server = new Server(9001);
+
+        ServletHandler handler = new ServletHandler();
+        server.setHandler(handler);
+
+        ServletHolder holder = handler.addServletWithMapping(JrpipServlet.class, "/JrpipServlet");
+        holder.setInitParameter("serviceInterface.Echo", "com.gs.jrpip.Echo"); // this is the interface
+        holder.setInitParameter("serviceClass.Echo", "com.gs.jrpip.EchoImpl"); // this is the implementation
+
+        server.start();
+```
+
+And older versions of Jetty:
+```java
+        HttpServer server = new HttpServer();
+
+        HttpContext context = new HttpContext();
+        context.setContextPath("/");
+
         ServletHandler servletHandler = new ServletHandler();
         context.addHandler(servletHandler);
 
         ServletHolder holder = servletHandler.addServlet("JrpipServlet", "/JrpipServlet", "com.gs.jrpip.server.JrpipServlet");
         holder.put("serviceInterface.Echo", "com.gs.jrpip.Echo"); // this is the interface
         holder.put("serviceClass.Echo", "com.gs.jrpip.EchoImpl"); // this is the implementation
+
+        server.addContext(context);
+        server.start();
 ```
 
 ### Client side usage:
@@ -88,14 +141,6 @@ The following static methods on `FastServletProxyFactory` can be used for simila
 * `setMaxTotalConnections`
 
 For sticky sessions (typically used with cookies and a loadbalancer), use `SessionAwareFastServletProxyFactory`.
-
-### Binary Logging:
-The following System properties can be used to configure binary logging.
-
-* `jrpip.enableBinaryLogs`: boolean. Default: `false`. Enables binary logging.
-* `jrpip.binaryLogsDirectory`: string. Default: `jrpipBinaryLogs`. Directory where binary logs are stored.
-
-The produced log file can be inspected with the utility ListJrpipRequest. Run that command to see the options.
 
 ### Method interceptor:
 To configure a method interceptor, add a parameter to the servlet configuration:
@@ -133,3 +178,65 @@ Example:
         </init-param>
     </servlet>
 ```
+
+## Usage with socket transport
+1. Create an interface for the service.
+2. Create an implementation of that interface. All objects in the implementation method signatures must be serializable and present
+on the classpaths of both the client and server.
+3. Deploy a `SocketServer` configured via `SocketServerConfig`.
+4. On the client, get an instance of the interface from the `MtProxyFactory` and call methods on it.
+
+### Example configuration:
+One or more interface/implementation pairs can be configured for a given server.
+See the javadoc for `SocketServerConfig` for more options.
+
+```java
+    SocketServerConfig config = new SocketServerConfig(9001);
+    config.addServiceConfig(ExampleService.class, ExampleServiceImpl.class);
+    config.addServiceConfig(AnotherService.class, AnotherServiceImpl.class);
+    SocketServer server = new SocketServer(config);
+    server.start();
+```
+
+### Client side usage:
+```java
+    SocketMessageTransport transport = new SocketMessageTransport();
+    MtProxyFactory factory = new MtProxyFactory(transport);
+    ExampleService example = factory.create(ExampleService.class,
+            "jpfs://localhost:9001"); // URL for socket server is always jpfs://<server>:<port>
+```
+
+### Authentication
+The socket server can be secured with a username/token pair (or pairs). The authentication
+sends the username and a hashed challenge (nonce), so the token is never sent over the wire.
+A socket is only authenticated once, right after connection.
+On the server side:
+```java
+    config.addCredentials("fred", "lkjhhjas56786349873dliuonkje");
+```
+and on the client:
+```java
+    SocketMessageTransport transport = new SocketMessageTransport("fred", "lkjhhjas56786349873dliuonkje");
+```
+
+### Method interceptor:
+See the javadoc for `SocketServerConfig` and `MethodInterceptor`
+
+### Event Listener
+See the javadoc for `SocketServerConfig` and `JrpipEventListener`
+
+### VM Bound configuration:
+In some cases, usually when the service implementation is stateful in some way, it is desirable to
+disallow the client from connecting to a new instance of the server. To configure such a service,
+add a vmbound (boolean) to the service configuration call:
+
+```java
+    config.addServiceConfig(ExampleService.class, ExampleServiceImpl.class, true);
+```
+
+### Compression
+The socket based transport can additionally turn off compression via annotations.
+`@Compression(compress = false)` can be specified at the interface class level, or
+at the method level, with the method level overriding the class level.
+The LZ4 compression used in JrPip is very fast/light and generally there is no
+benefit in changing it.

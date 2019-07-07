@@ -1,4 +1,4 @@
-set JDK_HOME=h:\tools\1.6.0_31_x64
+set JDK_HOME=c:\devel\jdk1.8.0_144
 
 @REM no need to modify stuff below:
 

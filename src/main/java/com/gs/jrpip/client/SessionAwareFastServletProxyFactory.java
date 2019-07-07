@@ -20,18 +20,18 @@ public class SessionAwareFastServletProxyFactory extends FastServletProxyFactory
 {
     public SessionAwareFastServletProxyFactory()
     {
-        this.setInvocationHandlerFunction(InvocationHandlerFunction.STICKY_SESSION);
+        this.setInvocationHandlerFunction(HttpInvocationHandlerFunction.STICKY_SESSION);
     }
 
     public SessionAwareFastServletProxyFactory(String user, String password)
     {
         super(user, password);
-        this.setInvocationHandlerFunction(InvocationHandlerFunction.STICKY_SESSION);
+        this.setInvocationHandlerFunction(HttpInvocationHandlerFunction.STICKY_SESSION);
     }
 
     public SessionAwareFastServletProxyFactory(String[] tokenArr, String path, String domain)
     {
         super(tokenArr, path, domain);
-        this.setInvocationHandlerFunction(InvocationHandlerFunction.STICKY_SESSION);
+        this.setInvocationHandlerFunction(HttpInvocationHandlerFunction.STICKY_SESSION);
     }
 }

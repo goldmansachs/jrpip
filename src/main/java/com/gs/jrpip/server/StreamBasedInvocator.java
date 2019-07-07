@@ -18,7 +18,7 @@ package com.gs.jrpip.server;
 
 import java.io.DataOutputStream;
 import java.io.IOException;
-import java.io.ObjectInputStream;
+import java.io.ObjectInput;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
@@ -42,6 +42,34 @@ public class StreamBasedInvocator
     public static final byte PING_REQUEST = (byte) 3;
     public static final byte INIT_REQUEST = (byte) 4;
     public static final byte CREATE_SESSION_REQUEST = (byte) 5;
+    public static final byte AUTH_FAILED = (byte) 8;
+    public static final int AUTH_MASK = 0x80;
+    public static final int COMPRESSED_MASK = 0x40;
+
+    public static boolean hasAuth(byte req)
+    {
+        return (req & AUTH_MASK) != 0;
+    }
+
+    public static boolean hasCompression(byte req)
+    {
+        return (req & COMPRESSED_MASK) != 0;
+    }
+
+    public static byte withAuth(byte req)
+    {
+        return (byte) (req | AUTH_MASK);
+    }
+
+    public static byte withCompression(byte req)
+    {
+        return (byte) (req | COMPRESSED_MASK);
+    }
+
+    public static byte withoutMasks(byte req)
+    {
+        return (byte) (req & ~(AUTH_MASK | COMPRESSED_MASK));
+    }
 
     //private static final boolean CAUSE_RANDOM_ERROR = true;
     //private static final double ERROR_RATE = 0.98;
@@ -56,7 +84,7 @@ public class StreamBasedInvocator
      * @param context the invocation context
      */
     public void invoke(
-            ObjectInputStream in,
+            ObjectInput in,
             Context context,
             Object service,
             MethodResolver methodResolver,
@@ -69,7 +97,7 @@ public class StreamBasedInvocator
     }
 
     public void invoke(
-            ObjectInputStream in,
+            ObjectInput in,
             Context context,
             Object service,
             MethodResolver methodResolver,
@@ -78,19 +106,26 @@ public class StreamBasedInvocator
             ListenerRegistry listeners,
             DataOutputStream binaryLogger,
             MethodInterceptor interceptor,
-            JrpipRequestContext requestContext) throws Exception
+            JrpipRequestContext requestContext) throws IOException, ClassNotFoundException
     {
         boolean continueInvocation = true;
         synchronized (context)
         {
             this.abortInvocation = false;
             // check to see if there is another request for the same invocation.
-            if (context.isInvokingMethod())
+            while (context.isInvokingMethod())
             {
                 continueInvocation = false;
-                context.wait(); // just wait for the other one
+                try
+                {
+                    context.wait(); // just wait for the other one
+                }
+                catch (InterruptedException e)
+                {
+                    //ignore
+                }
             }
-            else if (context.isInvocationFinished())
+            if (context.isInvocationFinished())
             {
                 continueInvocation = false;
             }

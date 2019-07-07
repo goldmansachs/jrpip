@@ -26,17 +26,24 @@ public class ThankYouWriterTest extends JrpipTestCase
     public void testAddRequest() throws Exception
     {
         AuthenticatedUrl url = new AuthenticatedUrl(this.getJrpipUrl(), new UsernamePasswordCredentials("username"));
+        HttpMessageTransport transport = new HttpMessageTransport();
         Cookie cookie1 = new Cookie("domain", "cookie1", "val1", "/", 1000, false);
         Cookie cookie2 = new Cookie("domain", "cookie2", "val2", "/", 1000, false);
         Cookie cookie3 = new Cookie("domain", "cookie3", "val3", "/", 1000, false);
         ThankYouWriter thankYouWriter = ThankYouWriter.getINSTANCE();
         thankYouWriter.stopThankYouThread();
-        thankYouWriter.addRequest(url, new Cookie[]{cookie1, cookie2, cookie3}, new RequestId(1));
-        thankYouWriter.addRequest(url, new Cookie[]{cookie1, cookie2, cookie3}, new RequestId(2));  // same combination
-        thankYouWriter.addRequest(url, new Cookie[]{cookie3, cookie2, cookie1}, new RequestId(3)); // cookie order changed
-        thankYouWriter.addRequest(url, new Cookie[]{cookie3}, new RequestId(4)); // mismatch cookies
-        thankYouWriter.addRequest(url, new Cookie[]{}, new RequestId(5)); // no cookies
-        thankYouWriter.addRequest(url, null, new RequestId(6)); // null cookies
+        thankYouWriter.addRequest(transport, new HttpMessageTransportData(url, true, 0, new Cookie[]{cookie1, cookie2, cookie3}),
+                new RequestId(1));
+        thankYouWriter.addRequest(transport, new HttpMessageTransportData(url, true, 0, new Cookie[]{cookie1, cookie2, cookie3}),
+                new RequestId(2));  // same combination
+        thankYouWriter.addRequest(transport, new HttpMessageTransportData(url, true, 0, new Cookie[]{cookie3, cookie2, cookie1}),
+                new RequestId(3)); // cookie order changed
+        thankYouWriter.addRequest(transport, new HttpMessageTransportData(url, true, 0, new Cookie[]{cookie3}),
+                new RequestId(4)); // mismatch cookies
+        thankYouWriter.addRequest(transport, new HttpMessageTransportData(url, true, 0, new Cookie[]{}),
+                new RequestId(5)); // no cookies
+        thankYouWriter.addRequest(transport, new HttpMessageTransportData(url, true, 0, null)
+                , new RequestId(6)); // null cookies
 
         assertEquals(3, thankYouWriter.getPendingRequests());
     }

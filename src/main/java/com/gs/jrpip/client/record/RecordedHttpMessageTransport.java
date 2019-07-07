@@ -16,57 +16,55 @@
 
 package com.gs.jrpip.client.record;
 
-import java.io.BufferedInputStream;
-import java.io.DataInput;
-import java.io.DataInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.ObjectInput;
-import java.io.ObjectInputStream;
-import java.lang.reflect.InvocationHandler;
-import java.lang.reflect.Method;
-
 import com.gs.jrpip.FixedInflaterInputStream;
-import com.gs.jrpip.client.JrpipRuntimeException;
+import com.gs.jrpip.RequestId;
+import com.gs.jrpip.client.HttpMessageTransport;
+import com.gs.jrpip.client.MessageTransportData;
+import com.gs.jrpip.client.ResponseMessage;
+import com.gs.jrpip.server.StreamBasedInvocator;
 import com.gs.jrpip.util.stream.ClampedInputStream;
 import com.gs.jrpip.util.stream.SerialMultiplexedWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class RecordedProxyInvocationHandler implements InvocationHandler
+import java.io.*;
+import java.lang.reflect.Method;
+
+public class RecordedHttpMessageTransport extends HttpMessageTransport
 {
-    private static final Logger LOGGER = LoggerFactory.getLogger(RecordedProxyInvocationHandler.class.getName());
+    private static final Logger LOGGER = LoggerFactory.getLogger(RecordedHttpMessageTransport.class.getName());
     private final MethodCallStreamResolver streamResolver;
 
-    public RecordedProxyInvocationHandler(MethodCallStreamResolver streamResolver)
+    public RecordedHttpMessageTransport(MethodCallStreamResolver streamResolver)
     {
         this.streamResolver = streamResolver;
     }
 
     @Override
-    public Object invoke(Object proxy, Method method, Object[] args) throws Throwable
+    public ResponseMessage sendParameters(MessageTransportData data, RequestId requestId, int timeout,
+            String serviceClass, String mangledMethodName, Object[] args, Method method, boolean compress) throws ClassNotFoundException, IOException
     {
-        InputStream resutStream = this.streamResolver.resolveInputStream(method, args);
-        if (resutStream == null)
+        InputStream resultStream = this.streamResolver.resolveInputStream(method, args);
+        if (resultStream == null)
         {
-            throw new JrpipRuntimeException("No recorded result available!");
+            throw new NotSerializableException("No recorded result available!");
         }
-        return this.readResultFromFile(resutStream);
+        Object o = readResultFromFile(resultStream);
+        if (o instanceof Throwable)
+        {
+            return ResponseMessage.forSuccess(StreamBasedInvocator.FAULT_STATUS, o);
+        }
+        return ResponseMessage.forSuccess(StreamBasedInvocator.OK_STATUS, o);
     }
 
-    private Object readResultFromFile(InputStream recordedResult) throws Throwable
+    private Object readResultFromFile(InputStream recordedResult) throws IOException, ClassNotFoundException
     {
         DataInputStream inputStream = new DataInputStream(new BufferedInputStream(recordedResult));
         try
         {
             this.validate(inputStream);
 
-            Object o = this.readResult(inputStream);
-            if (o instanceof Throwable)
-            {
-                throw (Throwable) o;
-            }
-            return o;
+            return this.readResult(inputStream);
         }
         finally
         {

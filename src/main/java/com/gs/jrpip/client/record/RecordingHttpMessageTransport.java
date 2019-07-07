@@ -1,53 +1,34 @@
-/*
-  Copyright 2017 Goldman Sachs.
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing,
-  software distributed under the License is distributed on an
-  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-  KIND, either express or implied.  See the License for the
-  specific language governing permissions and limitations
-  under the License.
- */
-
 package com.gs.jrpip.client.record;
+
+import com.gs.jrpip.client.HttpMessageTransport;
+import com.gs.jrpip.client.record.MethodCallStreamResolver;
+import com.gs.jrpip.util.stream.CopyOnReadInputStream;
+import com.gs.jrpip.util.stream.DedicatedOutputStream;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.Method;
 
-import com.gs.jrpip.client.AuthenticatedUrl;
-import com.gs.jrpip.client.FastServletProxyInvocationHandler;
-import com.gs.jrpip.util.stream.CopyOnReadInputStream;
-import com.gs.jrpip.util.stream.DedicatedOutputStream;
-
-public class RecordingProxyInvocationHandler extends FastServletProxyInvocationHandler
+public class RecordingHttpMessageTransport extends HttpMessageTransport
 {
     private static final DedicatedOutputStream SINGLE_OUTPUT_STREAM = new DedicatedOutputStream();
     private final MethodCallStreamResolver streamResolver;
 
-    public RecordingProxyInvocationHandler(
-            AuthenticatedUrl url,
-            Class<?> api,
-            int timeout,
-            MethodCallStreamResolver streamResolver)
+    public RecordingHttpMessageTransport(MethodCallStreamResolver streamResolver)
     {
-        super(url, api, timeout);
         this.streamResolver = streamResolver;
     }
 
-    public RecordingProxyInvocationHandler(
-            AuthenticatedUrl url,
-            Class<?> api,
-            int timeout,
-            MethodCallStreamResolver streamResolver, boolean stickySessionEnabled)
+    public RecordingHttpMessageTransport(String user, String password, MethodCallStreamResolver streamResolver)
     {
-        super(url, api, timeout, stickySessionEnabled);
+        super(user, password);
+        this.streamResolver = streamResolver;
+    }
+
+    public RecordingHttpMessageTransport(String[] tokenArr, String path, String domain, MethodCallStreamResolver streamResolver)
+    {
+        super(tokenArr, path, domain);
         this.streamResolver = streamResolver;
     }
 
@@ -78,4 +59,5 @@ public class RecordingProxyInvocationHandler extends FastServletProxyInvocationH
         copyOnReadInputStream.startCopyingInto(outputStream);
         return copyOnReadInputStream;
     }
+
 }
