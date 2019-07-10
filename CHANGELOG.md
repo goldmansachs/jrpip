@@ -1,4 +1,7 @@
 # Change Log
+## 5.1.0 2019-07-09
+- Added optional AES encryption to socket transport.
+
 ## 5.0.0 - 2019-07-05
 - Added `@Timeout` annotation to specify timeout on a per class or method level
 - Tighter timeout monitoring

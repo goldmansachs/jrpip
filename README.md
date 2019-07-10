@@ -219,6 +219,14 @@ and on the client:
     SocketMessageTransport transport = new SocketMessageTransport("fred", "lkjhhjas56786349873dliuonkje");
 ```
 
+## Encryption
+Encryption (AES-128/CBC) can be enabled when constructing the client side transport.
+```java
+    SocketMessageTransport transport = new SocketMessageTransport("fred", "lkjhhjas56786349873dliuonkje", true);
+```
+Encryption requires authentication, as it derives a per-session key from
+the user token and per-session nonce.
+
 ### Method interceptor:
 See the javadoc for `SocketServerConfig` and `MethodInterceptor`
 
