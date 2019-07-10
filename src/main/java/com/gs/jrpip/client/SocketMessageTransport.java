@@ -4,18 +4,24 @@ import com.gs.jrpip.FixedDeflaterOutputStream;
 import com.gs.jrpip.FixedInflaterInputStream;
 import com.gs.jrpip.RequestId;
 import com.gs.jrpip.server.StreamBasedInvocator;
-import com.gs.jrpip.util.AuthGenerator;
-import com.gs.jrpip.util.BlockInputStream;
-import com.gs.jrpip.util.BlockOutputStream;
+import com.gs.jrpip.util.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.crypto.Cipher;
+import javax.crypto.NoSuchPaddingException;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.IvParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
 import java.io.*;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.net.MalformedURLException;
 import java.net.Socket;
 import java.net.SocketException;
+import java.security.InvalidAlgorithmParameterException;
+import java.security.InvalidKeyException;
+import java.security.NoSuchAlgorithmException;
 import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.List;
@@ -26,18 +32,25 @@ public class SocketMessageTransport implements MessageTransport
     private static final Logger LOGGER = LoggerFactory.getLogger(SocketMessageTransport.class.getName());
     private static ConcurrentHashMap<String, Integer> serverInitialized = new ConcurrentHashMap<>();
     private static final SocketPool SOCKET_POOL = new SocketPool();
-    private static int IDLE_CLOSER_PERIOD = 1000;
+    private static final int IDLE_CLOSER_PERIOD = 1000;
 
     private final String username;
     private final byte[] token;
+    private final boolean encrypt;
 
     public SocketMessageTransport()
     {
         this.username = null;
         this.token = null;
+        this.encrypt = false;
     }
 
     public SocketMessageTransport(String username, String base32EncodedToken)
+    {
+        this(username, base32EncodedToken, false);
+    }
+
+    public SocketMessageTransport(String username, String base32EncodedToken, boolean encrypt)
     {
         this.username = username;
         try
@@ -48,6 +61,7 @@ public class SocketMessageTransport implements MessageTransport
         {
             throw new JrpipRuntimeException("Could not decode base32 encoded token", e);
         }
+        this.encrypt = encrypt;
     }
 
     @Override
@@ -82,7 +96,7 @@ public class SocketMessageTransport implements MessageTransport
                 SOCKET_POOL.putBackIntoPool(socket);
             }
         }
-        SocketMessageTransportData data = new SocketMessageTransportData(url, proxyId, this.username, this.token);
+        SocketMessageTransportData data = new SocketMessageTransportData(url, proxyId, this.username, this.token, this.encrypt);
         return new MtProxyInvocationHandler(data, this, api, timeoutMillis);
     }
 
@@ -148,7 +162,7 @@ public class SocketMessageTransport implements MessageTransport
 
     private JrpipClientSocket borrowSocket(String url) throws IOException
     {
-        SocketMessageTransportData data = new SocketMessageTransportData(url, -1, this.username, this.token);
+        SocketMessageTransportData data = new SocketMessageTransportData(url, -1, this.username, this.token, this.encrypt);
         return borrowSocket(data);
     }
 
@@ -351,12 +365,16 @@ public class SocketMessageTransport implements MessageTransport
     {
         private Socket socket;
         private SocketMessageTransportData data;
+        private AuthGenerator authGenerator;
         private volatile long lastUsed;
         private BlockOutputStream out;
         private BlockInputStream in;
         private boolean initialized = false;
+        private boolean authenticated = false;
         private long proxyId = -1;
         private int serverShutdownTime;
+        private CipherOutputStream128 cos;
+        private CipherInputStream128 cis;
 
         public JrpipClientSocket(SocketMessageTransportData data, Integer serverShutdownTime) throws IOException
         {
@@ -370,6 +388,7 @@ public class SocketMessageTransport implements MessageTransport
             out = new BlockOutputStream(this.socket.getOutputStream());
             lastUsed = System.currentTimeMillis();
             this.serverShutdownTime = serverShutdownTime == null ? 0 : serverShutdownTime;
+            this.authGenerator = this.data.createAuthGenerator();
         }
 
         public SocketMessageTransportData getData()
@@ -426,6 +445,10 @@ public class SocketMessageTransport implements MessageTransport
             {
                 type = StreamBasedInvocator.withAuth(type);
             }
+            if (this.data.requiresEncryption())
+            {
+                type = StreamBasedInvocator.withEncryption(type);
+            }
             this.out.write(type);
             DataOutputStream dos = new DataOutputStream(this.out);
             dos.writeUTF(this.data.getUrl());
@@ -455,6 +478,10 @@ public class SocketMessageTransport implements MessageTransport
             this.serverShutdownTime = dis.readInt();
             in.endConversation();
             this.initialized = true;
+            if (this.data.requiresAuth())
+            {
+                this.authenticated = true;
+            }
             this.proxyId = proxyId;
             this.lastUsed = System.currentTimeMillis();
             return proxyId;
@@ -465,16 +492,41 @@ public class SocketMessageTransport implements MessageTransport
             dos.writeUTF(this.data.getUsername());
             long challenge = AuthGenerator.createChallenge();
             dos.writeLong(challenge);
-            dos.writeInt(this.data.encodeChallenge(challenge));
+            dos.writeInt(this.authGenerator.authCode(challenge));
+            if (this.data.requiresEncryption())
+            {
+                try
+                {
+                    byte[] keyIv = this.authGenerator.generateKeyIv(challenge);
+                    SecretKey key = new SecretKeySpec(keyIv, 0, 16, "AES");
+                    IvParameterSpec iv = new IvParameterSpec(keyIv, 16, 16);
+                    Cipher enc = Cipher.getInstance("AES/CBC/NoPadding");
+                    enc.init(Cipher.ENCRYPT_MODE, key, iv);
+
+                    Cipher dec = Cipher.getInstance("AES/CBC/NoPadding");
+                    dec.init(Cipher.DECRYPT_MODE, key, iv);
+
+                    this.cos = new CipherOutputStream128(null, enc);
+                    this.cis = new CipherInputStream128(null, dec);
+                }
+                catch (NoSuchAlgorithmException | NoSuchPaddingException | InvalidKeyException | InvalidAlgorithmParameterException e)
+                {
+                    throw new RuntimeException("Shouldn't get here", e);
+                }
+            }
         }
 
         public ResponseMessage sendParameters(RequestId requestId, int timeout, String serviceClass, String mangledMethodName,
                 Object[] args, boolean compress) throws IOException, ClassNotFoundException
         {
             this.socket.setSoTimeout(timeout);
-            boolean needAuth = this.data.requiresAuth() && !this.initialized;
+            boolean needAuth = this.data.requiresAuth() && !this.authenticated;
             byte type = StreamBasedInvocator.INVOKE_REQUEST;
             type = compress ? StreamBasedInvocator.withCompression(type) : type;
+            if (this.data.requiresEncryption())
+            {
+                type = StreamBasedInvocator.withEncryption(type);
+            }
             if (needAuth)
             {
                 type = StreamBasedInvocator.withAuth(type);
@@ -487,8 +539,15 @@ public class SocketMessageTransport implements MessageTransport
             }
             OutputStream out = this.out;
             FixedDeflaterOutputStream zipped = null;
+            CipherOutputStream128 cos = null;
             try
             {
+                if (this.data.requiresEncryption())
+                {
+                    cos = this.cos;
+                    cos.reset(out);
+                    out = cos;
+                }
                 if (compress)
                 {
                     zipped = new FixedDeflaterOutputStream(out);
@@ -513,6 +572,10 @@ public class SocketMessageTransport implements MessageTransport
                 {
                     zipped.finish();
                 }
+                if (cos != null)
+                {
+                    cos.finish();
+                }
             }
             this.out.endConversation();
             this.in.beginConversation();
@@ -526,6 +589,10 @@ public class SocketMessageTransport implements MessageTransport
             {
                 returned = this.getResult(this.in, compress);
             }
+            if (needAuth)
+            {
+                this.authenticated = true;
+            }
             in.endConversation();
             this.lastUsed = System.currentTimeMillis();
             return ResponseMessage.forSuccess(status, returned);
@@ -534,6 +601,12 @@ public class SocketMessageTransport implements MessageTransport
         private Object getResult(InputStream in, boolean compress)
                 throws IOException, ClassNotFoundException
         {
+            if (this.data.requiresEncryption())
+            {
+                this.cis.reset(in);
+                in = this.cis;
+            }
+
             FixedInflaterInputStream zipped = null;
             try
             {

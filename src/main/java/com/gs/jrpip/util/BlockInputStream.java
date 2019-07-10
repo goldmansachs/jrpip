@@ -157,6 +157,10 @@ public class BlockInputStream extends InputStream
                 lenLeft -= toCopy;
                 actualCopied += toCopy;
             }
+            if (actualCopied == 0 && last && this.readPos == this.totalLength)
+            {
+                actualCopied = -1;
+            }
             return actualCopied;
         }
 
@@ -305,10 +309,13 @@ public class BlockInputStream extends InputStream
     public static int fullyRead(InputStream in, byte[] b, int off, int len) throws IOException
     {
         int read = 0;
-        while (read < len) {
+        while (read < len)
+        {
             int count = in.read(b, off + read, len - read);
             if (count < 0)
-                break;
+            {
+                return read == 0 ? -1 : read;
+            }
             read += count;
         }
         return read;
