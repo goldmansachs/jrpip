@@ -45,6 +45,7 @@ public class StreamBasedInvocator
     public static final byte AUTH_FAILED = (byte) 8;
     public static final int AUTH_MASK = 0x80;
     public static final int COMPRESSED_MASK = 0x40;
+    public static final int ENCRYPT_MASK = 0x20;
 
     public static boolean hasAuth(byte req)
     {
@@ -54,6 +55,11 @@ public class StreamBasedInvocator
     public static boolean hasCompression(byte req)
     {
         return (req & COMPRESSED_MASK) != 0;
+    }
+
+    public static boolean hasEncryption(byte req)
+    {
+        return (req & ENCRYPT_MASK) != 0;
     }
 
     public static byte withAuth(byte req)
@@ -66,9 +72,14 @@ public class StreamBasedInvocator
         return (byte) (req | COMPRESSED_MASK);
     }
 
+    public static byte withEncryption(byte req)
+    {
+        return (byte) (req | ENCRYPT_MASK);
+    }
+
     public static byte withoutMasks(byte req)
     {
-        return (byte) (req & ~(AUTH_MASK | COMPRESSED_MASK));
+        return (byte) (req & ~(AUTH_MASK | COMPRESSED_MASK | ENCRYPT_MASK));
     }
 
     //private static final boolean CAUSE_RANDOM_ERROR = true;

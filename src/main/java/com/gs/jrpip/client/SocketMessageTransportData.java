@@ -15,12 +15,14 @@ public class SocketMessageTransportData implements MessageTransportData
     private final int hashcode;
     private final String username;
     private final byte[] token;
+    private final boolean encrypt;
 
-    public SocketMessageTransportData(String url, long proxyId, String username, byte[] token) throws MalformedURLException
+    public SocketMessageTransportData(String url, long proxyId, String username, byte[] token, boolean encrypt) throws MalformedURLException
     {
         this.url = url;
         this.username = username;
         this.token = token;
+        this.encrypt = encrypt;
         if (!url.startsWith("jpfs://"))
         {
             throw new MalformedURLException("jpfs url must start with 'jpfs://' "+url);
@@ -48,6 +50,11 @@ public class SocketMessageTransportData implements MessageTransportData
             hashcode = hashcode * 31 + username.hashCode();
         }
         this.hashcode = hashcode;
+    }
+
+    public boolean requiresEncryption()
+    {
+        return encrypt;
     }
 
     public String getUsername()
@@ -116,18 +123,6 @@ public class SocketMessageTransportData implements MessageTransportData
         return this.username != null;
     }
 
-    public int encodeChallenge(long challenge)
-    {
-        try
-        {
-            return AuthGenerator.authCode(this.token, challenge);
-        }
-        catch (GeneralSecurityException e)
-        {
-            throw new JrpipRuntimeException("Could not generate auth code", e);
-        }
-    }
-
     @Override
     public String toString()
     {
@@ -141,5 +136,21 @@ public class SocketMessageTransportData implements MessageTransportData
             result += " no credentials configured";
         }
         return result;
+    }
+
+    public AuthGenerator createAuthGenerator()
+    {
+        if (this.token != null)
+        {
+            try
+            {
+                return new AuthGenerator(token);
+            }
+            catch (GeneralSecurityException e)
+            {
+                throw new RuntimeException("Never happens", e);
+            }
+        }
+        return null;
     }
 }

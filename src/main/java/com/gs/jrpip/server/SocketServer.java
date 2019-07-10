@@ -22,9 +22,7 @@ import com.gs.jrpip.MethodResolver;
 import com.gs.jrpip.RequestId;
 import com.gs.jrpip.client.JrpipRuntimeException;
 import com.gs.jrpip.client.JrpipVmBoundException;
-import com.gs.jrpip.util.AuthGenerator;
-import com.gs.jrpip.util.BlockInputStream;
-import com.gs.jrpip.util.BlockOutputStream;
+import com.gs.jrpip.util.*;
 import com.gs.jrpip.util.stream.CopyOnReadInputStream;
 import com.gs.jrpip.util.stream.OutputStreamBuilder;
 import com.gs.jrpip.util.stream.VirtualOutputStream;
@@ -32,11 +30,19 @@ import com.gs.jrpip.util.stream.VirtualOutputStreamFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.crypto.Cipher;
+import javax.crypto.NoSuchPaddingException;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.IvParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
 import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.security.GeneralSecurityException;
+import java.security.InvalidAlgorithmParameterException;
+import java.security.InvalidKeyException;
+import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.concurrent.ConcurrentHashMap;
@@ -282,6 +288,9 @@ public class SocketServer
         private BlockOutputStream outputStream;
         private boolean authorized = false;
         private String username;
+        private AuthGenerator authGenerator;
+        private CipherOutputStream128 cos;
+        private CipherInputStream128 cis;
 
         public ServerSocketHandler(Socket socket)
         {
@@ -360,14 +369,15 @@ public class SocketServer
             }
             byte reqTypeWithoutMasks = StreamBasedInvocator.withoutMasks(requestType);
             boolean hasAuth = StreamBasedInvocator.hasAuth(requestType);
+            boolean hasEncryption = StreamBasedInvocator.hasEncryption(requestType);
             if (reqTypeWithoutMasks == StreamBasedInvocator.INIT_REQUEST)
             {
-                this.serviceInitRequest(hasAuth);
+                this.serviceInitRequest(hasAuth, hasEncryption);
                 return;
             }
             if (hasAuth)
             {
-                if (!verifyAuth(true, new DataInputStream(this.inputStream)))
+                if (!verifyAuth(true, new DataInputStream(this.inputStream), hasEncryption))
                 {
                     return;
                 }
@@ -376,6 +386,11 @@ public class SocketServer
                 requestType == StreamBasedInvocator.THANK_YOU_REQUEST;
             FixedInflaterInputStream zipped = null;
             InputStream is = this.inputStream;
+            if (hasEncryption)
+            {
+                this.cis.reset(is);
+                is = this.cis;
+            }
             if (compressed)
             {
                 zipped = new FixedInflaterInputStream(is);
@@ -429,7 +444,7 @@ public class SocketServer
 
         }
 
-        private void serviceInitRequest(boolean auth) throws IOException
+        private void serviceInitRequest(boolean auth, boolean encrypt) throws IOException
         {
             DataInputStream dis = new DataInputStream(this.inputStream);
             String url = dis.readUTF();
@@ -441,7 +456,7 @@ public class SocketServer
                     registeredUrls.add(url);
                 }
             }
-            if (!verifyAuth(auth, dis)) return;
+            if (!verifyAuth(auth, dis, encrypt)) return;
             this.outputStream.write(StreamBasedInvocator.INIT_REQUEST);
             int id = CLIENT_ID.incrementAndGet();
             long vmAndClientId = vmId | (long) id;
@@ -449,16 +464,38 @@ public class SocketServer
             this.outputStream.writeInt(config.getIdleSocketCloseTime());
         }
 
-        private boolean verifyAuth(boolean auth, DataInputStream dis) throws IOException
+        private boolean verifyAuth(boolean auth, DataInputStream dis, boolean encrypt) throws IOException
         {
-            boolean verified = true;
+            boolean verified = false;
             String username = null;
+            AuthGenerator generator = null;
+            long challenge = 0;
             if (auth)
             {
+                if (this.authorized)
+                {
+                    throw new RuntimeException("Should never auth twice!");
+                }
                 username = dis.readUTF();
-                long challenge = dis.readLong();
+                challenge = dis.readLong();
                 int encoded = dis.readInt();
-                verified = verifyUser(username, challenge, encoded);
+                byte[] token = config.getTokenForUser(username);
+                if (token != null)
+                {
+                    try
+                    {
+                        generator = new AuthGenerator(token);
+                        verified = generator.verifyChallenge(challenge, encoded);
+                        if (verified)
+                        {
+                            verified = userNonces.computeIfAbsent(username, (x) -> new UserNonces()).addIfNotPresent(challenge);
+                        }
+                    }
+                    catch (GeneralSecurityException e)
+                    {
+                        throw new RuntimeException("Should never get here", e);
+                    }
+                }
             }
             else if (config.requiresAuth())
             {
@@ -471,6 +508,29 @@ public class SocketServer
                 {
                     this.authorized = true;
                     this.username = username;
+                    this.authGenerator = generator;
+                    if (encrypt)
+                    {
+                        try
+                        {
+                            byte[] keyIv = this.authGenerator.generateKeyIv(challenge);
+                            SecretKey key = new SecretKeySpec(keyIv, 0, 16, "AES");
+                            IvParameterSpec iv = new IvParameterSpec(keyIv, 16, 16);
+                            Cipher enc = Cipher.getInstance("AES/CBC/NoPadding");
+                            enc.init(Cipher.ENCRYPT_MODE, key, iv);
+
+                            Cipher dec = Cipher.getInstance("AES/CBC/NoPadding");
+                            dec.init(Cipher.DECRYPT_MODE, key, iv);
+
+                            this.cos = new CipherOutputStream128(null, enc);
+                            this.cis = new CipherInputStream128(null, dec);
+                        }
+                        catch (NoSuchAlgorithmException | NoSuchPaddingException | InvalidKeyException | InvalidAlgorithmParameterException e)
+                        {
+                            throw new RuntimeException("Shouldn't get here", e);
+                        }
+
+                    }
                 }
                 else
                 {
@@ -507,7 +567,7 @@ public class SocketServer
             else
             {
                 resendContext.waitForInvocationToFinish();
-                resendContext.writeAndLogResponse(this.outputStream, resendRequestId);
+                resendContext.writeAndLogResponse(this.outputStream, resendRequestId, this.cos);
             }
         }
 
@@ -566,29 +626,7 @@ public class SocketServer
                     copyTo.close();
                 }
             }
-            invokeContext.writeAndLogResponse(outputStream, requestId);
-        }
-    }
-
-    private boolean verifyUser(String username, long challenge, int encoded)
-    {
-        byte[] token = this.config.getTokenForUser(username);
-        if (token == null)
-        {
-            return false;
-        }
-        try
-        {
-            boolean result = AuthGenerator.verifyChallenge(challenge, token, encoded);
-            if (result)
-            {
-                result = this.userNonces.computeIfAbsent(username, (x) -> new UserNonces()).addIfNotPresent(challenge);
-            }
-            return result;
-        }
-        catch (GeneralSecurityException e)
-        {
-            return false; // this will never happen
+            invokeContext.writeAndLogResponse(outputStream, requestId, this.cos);
         }
     }
 

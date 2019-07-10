@@ -16,7 +16,6 @@
 
 package com.gs.jrpip;
 
-import com.gs.jrpip.client.MtProxyInvocationHandler;
 import com.gs.jrpip.client.SocketMessageTransport;
 import com.gs.jrpip.client.MtProxyFactory;
 import com.gs.jrpip.client.ThankYouWriter;
@@ -27,7 +26,6 @@ import org.junit.Assert;
 
 import java.io.IOException;
 import java.net.MalformedURLException;
-import java.util.*;
 
 public abstract class SocketTestCase
         extends MockObjectTestCase

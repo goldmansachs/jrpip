@@ -26,8 +26,16 @@ public class AuthGenerator
         return (System.currentTimeMillis() << 20) | (counter.incrementAndGet() & ((1 << 20) - 1));
     }
 
-    public static boolean verifyChallenge(long challenge, byte[] token, int encoded)
-            throws GeneralSecurityException
+    private CodeGenerator generator;
+
+    public AuthGenerator(byte[] token) throws GeneralSecurityException
+    {
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(token, ""));
+        this.generator = new CodeGenerator(mac);
+    }
+
+    public boolean verifyChallenge(long challenge, int encoded)
     {
         long timePart = challenge >>> 20;
         long now = System.currentTimeMillis();
@@ -35,15 +43,23 @@ public class AuthGenerator
         {
             return false;
         }
-        return encoded == authCode(token, challenge);
+        return encoded == this.generator.generateResponseCode(challenge);
     }
 
-    public static int authCode(byte[] token, long challenge) throws GeneralSecurityException
+    public byte[] generateKeyIv(long challenge)
     {
-        Mac mac = Mac.getInstance("HmacSHA256");
-        mac.init(new SecretKeySpec(token, ""));
-        CodeGenerator generator = new CodeGenerator(mac);
-        return generator.generateResponseCode(challenge);
+        challenge ^= challenge >>> 23;
+        challenge *= -6261870919139520145L;
+        challenge ^= challenge >>> 39;
+        challenge *= 2747051607443084853L;
+        challenge ^= challenge >>> 37;
+
+        return this.generator.hash(challenge);
+    }
+
+    public int authCode(long challenge)
+    {
+        return this.generator.generateResponseCode(challenge);
     }
 
     static Base32String getInstance()
@@ -64,6 +80,12 @@ public class AuthGenerator
         {
             byte[] value = ByteBuffer.allocate(8).putLong(challenge).array();
             return generateResponseCode(value);
+        }
+
+        public byte[] hash(long challenge)
+        {
+            byte[] value = ByteBuffer.allocate(8).putLong(challenge).array();
+            return mac.doFinal(value);
         }
 
         public int generateResponseCode(byte[] challenge)

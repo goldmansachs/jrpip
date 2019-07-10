@@ -21,6 +21,7 @@ import java.util.ArrayList;
 
 import com.gs.jrpip.FixedDeflaterOutputStream;
 import com.gs.jrpip.RequestId;
+import com.gs.jrpip.util.CipherOutputStream128;
 import com.gs.jrpip.util.stream.CopyOnWriteOutputStream;
 import com.gs.jrpip.util.stream.OutputStreamBuilder;
 import com.gs.jrpip.util.stream.VirtualOutputStream;
@@ -168,27 +169,54 @@ public class Context
 
     public void writeAndLogResponse(OutputStream outputStream, RequestId requestId) throws IOException
     {
-        if (this.outputStreamBuilder.equals(VirtualOutputStream.NULL_OUTPUT_STREAM_BUILDER))
+        this.writeAndLogResponse(outputStream, requestId, null);
+    }
+
+    public void writeAndLogResponse(OutputStream outputStream, RequestId requestId, CipherOutputStream128 cos) throws IOException
+    {
+        try
         {
-            this.writeResponse(outputStream);
-        }
-        else
-        {
-            ObjectOutputStream binaryLogger = null;
-            try
+            writeHeader(outputStream);
+            if (this.outputStreamBuilder.equals(VirtualOutputStream.NULL_OUTPUT_STREAM_BUILDER))
             {
-                DataOutputStream dataOutputStream = this.outputStreamBuilder.newOutputStream();
-                dataOutputStream.writeByte(OutputStreamBuilder.RESPONSE_HEADER);
-                binaryLogger = new ObjectOutputStream(dataOutputStream);
-                binaryLogger.writeObject(requestId);
-                this.writeResponse(new CopyOnWriteOutputStream(outputStream, binaryLogger));
-            }
-            finally
-            {
-                if (binaryLogger != null)
+                if (cos != null)
                 {
-                    binaryLogger.close();
+                    cos.reset(outputStream);
+                    outputStream = cos;
                 }
+                this.writeResponse(outputStream);
+            }
+            else
+            {
+                ObjectOutputStream binaryLogger = null;
+                try
+                {
+                    DataOutputStream dataOutputStream = this.outputStreamBuilder.newOutputStream();
+                    dataOutputStream.writeByte(OutputStreamBuilder.RESPONSE_HEADER);
+                    binaryLogger = new ObjectOutputStream(dataOutputStream);
+                    binaryLogger.writeObject(requestId);
+                    writeHeader(binaryLogger);
+                    if (cos != null)
+                    {
+                        cos.reset(outputStream);
+                        outputStream = cos;
+                    }
+                    this.writeResponse(new CopyOnWriteOutputStream(outputStream, binaryLogger));
+                }
+                finally
+                {
+                    if (binaryLogger != null)
+                    {
+                        binaryLogger.close();
+                    }
+                }
+            }
+        }
+        finally
+        {
+            if (cos != null)
+            {
+                cos.finish();
             }
         }
     }
@@ -196,14 +224,6 @@ public class Context
     private void writeResponse(OutputStream outputStream) throws IOException
     {
         //if (CAUSE_RANDOM_ERROR) if (Math.random() > ERROR_RATE) throw new IOException("Random error, for testing only!");
-        if (this.exceptionThrown)
-        {
-            outputStream.write(StreamBasedInvocator.FAULT_STATUS);
-        }
-        else
-        {
-            outputStream.write(StreamBasedInvocator.OK_STATUS);
-        }
         FixedDeflaterOutputStream zipped = null;
         if (this.compressed)
         {
@@ -223,6 +243,18 @@ public class Context
             {
                 zipped.finish();
             }
+        }
+    }
+
+    private void writeHeader(OutputStream outputStream) throws IOException
+    {
+        if (this.exceptionThrown)
+        {
+            outputStream.write(StreamBasedInvocator.FAULT_STATUS);
+        }
+        else
+        {
+            outputStream.write(StreamBasedInvocator.OK_STATUS);
         }
     }
 }
