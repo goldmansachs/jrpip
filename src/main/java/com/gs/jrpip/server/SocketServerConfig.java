@@ -92,6 +92,19 @@ public class SocketServerConfig
     }
 
     /**
+     * Adds an instance of service. This allows for stateful services.
+     *
+     * @param serviceInterface The interface the remote will be calling with
+     * @param service The instance of the service that should be invoked
+     * @param vmBound This service is bound to this VM and if the VM goes down, existing clients will not reconnect
+     *                to a new VM.
+     */
+    public void addServiceInstance(Class serviceInterface, Object service, boolean vmBound)
+    {
+        this.configs.add(new SingleServiceConfig(serviceInterface, service, vmBound));
+    }
+
+    /**
      * Add the service interface and implementation classes. Can be called multiple times.
      *
      * @param serviceInterface The interface class
@@ -100,6 +113,17 @@ public class SocketServerConfig
     public void addServiceConfig(Class serviceInterface, Class serviceClass)
     {
         this.addServiceConfig(serviceInterface, serviceClass, false);
+    }
+
+    /**
+     * Adds an instance of service. This allows for stateful services.
+     *
+     * @param serviceInterface The interface class
+     * @param serviceInstance The service object instance
+     */
+    public void addServiceInstance(Class serviceInterface, Object serviceInstance)
+    {
+        this.addServiceInstance(serviceInterface, serviceInstance, false);
     }
 
     /**

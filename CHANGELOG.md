@@ -1,4 +1,7 @@
 # Change Log
+## 5.1.1 2019-08-09
+- Added stateful service configuration to socket transport.
+
 ## 5.1.0 2019-07-09
 - Added optional AES encryption to socket transport.
 

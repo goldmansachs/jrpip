@@ -180,19 +180,10 @@ public class SocketServer
                 LOGGER.warn("The class {} does not implement {}. This may be a serious error in your configuration. This class will not be available locally.",
                         serviceClass.getName(), interfaceClass.getName());
             }
-            Object service;
-            try
+            Object service = cfg.getOrConstructService();
+            if (serviceImplementsInterface)
             {
-                service = serviceClass.newInstance();
-                if (serviceImplementsInterface)
-                {
-                    JrpipServiceRegistry.getInstance().addServiceForWebApp(this.webapp, interfaceClass, service);
-                }
-            }
-            catch (Exception e)
-            {
-                LOGGER.error("Caught exception while instantiating service class: {}", serviceClass, e);
-                throw new JrpipRuntimeException("Could not instantiate service class", e);
+                JrpipServiceRegistry.getInstance().addServiceForWebApp(this.webapp, interfaceClass, service);
             }
             MethodResolver methodResolver = new MethodResolver(serviceClass);
             this.serviceMap.put(interfaceClass.getName(), new ServiceDefinition(service, methodResolver,
