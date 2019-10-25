@@ -6,6 +6,7 @@ import com.gs.jrpip.util.stream.OutputStreamBuilder;
 class ServiceDefinition
 {
     private final Object service;
+    private Class serviceInterface;
     private final MethodResolver methodResolver;
     private final boolean isVmBound;
     private final OutputStreamBuilder outputStreamBuilder;
@@ -20,6 +21,16 @@ class ServiceDefinition
         this.methodResolver = methodResolver;
         this.outputStreamBuilder = outputStreamBuilder;
         this.isVmBound = isVmBound;
+    }
+
+    public Class getServiceInterface()
+    {
+        return serviceInterface;
+    }
+
+    public void setServiceInterface(Class serviceInterface)
+    {
+        this.serviceInterface = serviceInterface;
     }
 
     public OutputStreamBuilder getOutputStreamBuilder()
