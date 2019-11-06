@@ -16,13 +16,15 @@ public class SocketMessageTransportData implements MessageTransportData
     private final String username;
     private final byte[] token;
     private final boolean encrypt;
+    private final long timeoutMillis;
 
-    public SocketMessageTransportData(String url, long proxyId, String username, byte[] token, boolean encrypt) throws MalformedURLException
+    public SocketMessageTransportData(String url, long proxyId, String username, byte[] token, boolean encrypt, long timeoutMillis) throws MalformedURLException
     {
         this.url = url;
         this.username = username;
         this.token = token;
         this.encrypt = encrypt;
+        this.timeoutMillis = timeoutMillis;
         if (!url.startsWith("jpfs://"))
         {
             throw new MalformedURLException("jpfs url must start with 'jpfs://' "+url);
@@ -94,6 +96,11 @@ public class SocketMessageTransportData implements MessageTransportData
     public long getProxyId()
     {
         return this.proxyId;
+    }
+
+    public long getTimeoutMillis()
+    {
+        return timeoutMillis;
     }
 
     @Override
