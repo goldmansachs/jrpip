@@ -1,4 +1,9 @@
 # Change Log
+## 5.1.2 2019-11-05
+- for socket server, fix url to service local map
+- for socket server, fix socket initial connection timeout
+
+# Change Log
 ## 5.1.1 2019-08-09
 - Added stateful service configuration to socket transport.
 

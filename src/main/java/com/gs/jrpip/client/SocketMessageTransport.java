@@ -16,6 +16,7 @@ import javax.crypto.spec.SecretKeySpec;
 import java.io.*;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
+import java.net.InetSocketAddress;
 import java.net.MalformedURLException;
 import java.net.Socket;
 import java.net.SocketException;
@@ -78,7 +79,7 @@ public class SocketMessageTransport implements MessageTransport
             JrpipClientSocket socket = null;
             try
             {
-                socket = borrowSocket(url);
+                socket = borrowSocket(url, timeoutMillis);
                 proxyId = socket.initRequest(timeoutMillis);
             }
             catch(MalformedURLException mue)
@@ -96,7 +97,7 @@ public class SocketMessageTransport implements MessageTransport
                 SOCKET_POOL.putBackIntoPool(socket);
             }
         }
-        SocketMessageTransportData data = new SocketMessageTransportData(url, proxyId, this.username, this.token, this.encrypt);
+        SocketMessageTransportData data = new SocketMessageTransportData(url, proxyId, this.username, this.token, this.encrypt, timeoutMillis);
         return new MtProxyInvocationHandler(data, this, api, timeoutMillis);
     }
 
@@ -144,7 +145,7 @@ public class SocketMessageTransport implements MessageTransport
         JrpipClientSocket socket = null;
         try
         {
-            socket = borrowSocket(url);
+            socket = borrowSocket(url, timeoutMillis);
             return socket.fastFailPing(timeoutMillis) == 200;
         }
         catch(Throwable t)
@@ -160,9 +161,9 @@ public class SocketMessageTransport implements MessageTransport
         return false; // can never get here!
     }
 
-    private JrpipClientSocket borrowSocket(String url) throws IOException
+    private JrpipClientSocket borrowSocket(String url, long timeoutMillis) throws IOException
     {
-        SocketMessageTransportData data = new SocketMessageTransportData(url, -1, this.username, this.token, this.encrypt);
+        SocketMessageTransportData data = new SocketMessageTransportData(url, -1, this.username, this.token, this.encrypt, timeoutMillis);
         return borrowSocket(data);
     }
 
@@ -320,7 +321,7 @@ public class SocketMessageTransport implements MessageTransport
             JrpipClientSocket socket = null;
             try
             {
-                socket = borrowSocket(url);
+                socket = borrowSocket(url, timeout);
                 socket.initRequest(timeout);
                 serverInitialized.put(url, socket.serverShutdownTime);
             }
@@ -379,11 +380,12 @@ public class SocketMessageTransport implements MessageTransport
         public JrpipClientSocket(SocketMessageTransportData data, Integer serverShutdownTime) throws IOException
         {
             this.data = data;
-            this.socket = new Socket(data.getHost(), data.getPort());
-            this.socket.setSoTimeout(0);
+            this.socket = new Socket();
             this.socket.setKeepAlive(true);
             this.socket.setTcpNoDelay(true);
             this.socket.setSoLinger(true, 2);
+            this.socket.connect(new InetSocketAddress(data.getHost(), data.getPort()), (int) data.getTimeoutMillis());
+            this.socket.setSoTimeout(0);
             in = new BlockInputStream(this.socket.getInputStream());
             out = new BlockOutputStream(this.socket.getOutputStream());
             lastUsed = System.currentTimeMillis();
