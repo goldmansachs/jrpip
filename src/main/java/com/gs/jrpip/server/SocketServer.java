@@ -65,7 +65,6 @@ public class SocketServer
     private AtomicInteger methodInvocations = new AtomicInteger();
     private AtomicInteger thankYous = new AtomicInteger();
     private AtomicInteger resendRequests = new AtomicInteger();
-    private String webapp;
     private long startTime;
     private final HashSet<String> registeredUrls = new HashSet<>();
     private boolean binaryLoggingEnabled;
@@ -99,7 +98,6 @@ public class SocketServer
     public void start() throws IOException
     {
         this.startTime = System.currentTimeMillis();
-        this.webapp = "DEFAULTJRPIP";
 
         initConfig();
 
@@ -181,13 +179,11 @@ public class SocketServer
                         serviceClass.getName(), interfaceClass.getName());
             }
             Object service = cfg.getOrConstructService();
-            if (serviceImplementsInterface)
-            {
-                JrpipServiceRegistry.getInstance().addServiceForWebApp(this.webapp, interfaceClass, service);
-            }
             MethodResolver methodResolver = new MethodResolver(serviceClass);
-            this.serviceMap.put(interfaceClass.getName(), new ServiceDefinition(service, methodResolver,
-                    this.initializeOutputStreamBuilder(interfaceClass), cfg.isVmBound()));
+            ServiceDefinition value = new ServiceDefinition(service, methodResolver,
+                    this.initializeOutputStreamBuilder(interfaceClass), cfg.isVmBound());
+            value.setServiceInterface(interfaceClass);
+            this.serviceMap.put(interfaceClass.getName(), value);
         }
         if (this.serviceMap.isEmpty())
         {
@@ -443,7 +439,11 @@ public class SocketServer
             {
                 if (!registeredUrls.contains(url))
                 {
-                    JrpipServiceRegistry.getInstance().registerWebAppAtUrl(webapp, url);
+                    for(ServiceDefinition serviceDefinition: serviceMap.values())
+                    {
+                        JrpipServiceRegistry.getInstance().addServiceForUrl(url,
+                                serviceDefinition.getServiceInterface(), serviceDefinition.getService());
+                    }
                     registeredUrls.add(url);
                 }
             }
