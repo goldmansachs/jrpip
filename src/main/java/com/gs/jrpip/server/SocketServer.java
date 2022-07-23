@@ -13,6 +13,7 @@
   specific language governing permissions and limitations
   under the License.
  */
+//Portions copyright Alexandr Varlamov. Licensed under Apache 2.0 license
 
 package com.gs.jrpip.server;
 
@@ -72,6 +73,8 @@ public class SocketServer
     private int port;
     private SocketServerThread socketServerThread;
     private ConcurrentHashMap<String, UserNonces> userNonces = new ConcurrentHashMap<>();
+
+    private ConcurrentHashMap<ServerSocketHandler, Object> hanlders = new ConcurrentHashMap();
 
     public SocketServer(SocketServerConfig config)
     {
@@ -143,6 +146,20 @@ public class SocketServer
             catch (InterruptedException e)
             {
                 //ignore
+            }
+        }
+    }
+
+    public void terminateConnections()
+    {
+        for (ServerSocketHandler ssh: this.hanlders.keySet())
+        {
+            try
+            {
+                ssh.socket.close();
+            } catch (Exception ignore)
+            {
+
             }
         }
     }
@@ -237,6 +254,7 @@ public class SocketServer
                     incoming = serverSocket.accept();
                     ServerSocketHandler serverSocketHandler = new ServerSocketHandler(incoming);
                     serverSocketHandler.start();
+                    SocketServer.this.hanlders.put(serverSocketHandler, "1");
                 }
                 catch (SocketTimeoutException e)
                 {
@@ -343,6 +361,14 @@ public class SocketServer
             finally
             {
                 quietlyClose(socket);
+                try
+                {
+                    SocketServer.this.hanlders.remove(this);
+                }
+                catch (Throwable ignore)
+                {
+
+                }
             }
         }
 
