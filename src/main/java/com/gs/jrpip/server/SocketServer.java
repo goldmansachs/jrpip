@@ -150,6 +150,12 @@ public class SocketServer
         }
     }
 
+    public void stopAndTerminateConnections()
+    {
+        this.stop();
+        this.terminateConnections();
+    }
+
     public void terminateConnections()
     {
         for (ServerSocketHandler ssh: this.hanlders.keySet())
@@ -157,7 +163,8 @@ public class SocketServer
             try
             {
                 ssh.socket.close();
-            } catch (Exception ignore)
+            }
+            catch (Exception ignore)
             {
 
             }

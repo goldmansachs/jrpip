@@ -1,4 +1,7 @@
 # Change Log
+## 5.1.3 2022-07-24
+- for socket server, add a method to terminate ongoing connections (usually after stop)
+
 ## 5.1.2 2019-11-05
 - for socket server, fix url to service local map
 - for socket server, fix socket initial connection timeout
