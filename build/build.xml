@@ -165,7 +165,7 @@
         <tstamp>
             <format property="TIME_NOW" pattern="hh:mm:ss a z"/>
         </tstamp>
-        <echo message="JUnit master suite for jrpip starting at ${TIME_NOW} on ${TODAY} with ${test.threads} jvms."/>
+        <echo message="JUnit master suite for jrpip starting at ${TIME_NOW} on ${TODAY}."/>
         <echo message="Log4j file: ${root}/src/test/resources/log4j.properties"/>
         <junit printSummary="yes" haltonerror="true" haltonfailure="true" fork="true" dir="${root}/target/testresult">
             <formatter type="xml" />

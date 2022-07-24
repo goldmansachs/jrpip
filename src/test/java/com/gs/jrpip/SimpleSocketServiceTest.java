@@ -184,4 +184,23 @@ public class SimpleSocketServiceTest
         Assert.assertTrue(end - now < 100);
 
     }
+
+    public void testTerminateServerSide() throws Exception
+    {
+        Echo echo = this.buildEchoProxy(100);
+
+        Assert.assertEquals("hello", echo.echo("hello"));
+
+        this.server.stopAndTerminateConnections();
+
+        try
+        {
+            echo.echo("hello");
+            Assert.fail("Must not get here");
+        }
+        catch(JrpipRuntimeException exception)
+        {
+            // expected
+        }
+    }
 }
